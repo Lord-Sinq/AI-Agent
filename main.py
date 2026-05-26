@@ -15,7 +15,14 @@ def list_available_files(data_dir: str = "data") -> list:
     p = Path(data_dir)
     if not p.exists():
         return []
-    return sorted([f.name for f in p.iterdir() if f.is_file()])
+    
+    # Filter out .gitkeep and any hidden files
+    return sorted([
+        f.name for f in p.iterdir() 
+        if f.is_file() 
+        and f.name != ".gitkeep"  # Exclude git placeholder
+        and not f.name.startswith(".")  # Exclude hidden files (optional)
+    ])
 
 
 def select_file_interactive(data_dir: str = "data") -> str:
@@ -51,16 +58,6 @@ def build_parser():
 def main():
     parser = build_parser()
     args = parser.parse_args()
-
-    # Verify .env file exists
-    if not Path(".env").exists():
-        print("⚠️  Warning: .env file not found. Please create one with your Azure OpenAI credentials.")
-        print("   Expected format:")
-        print("   AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/")
-        print("   AZURE_OPENAI_API_KEY=your-key")
-        print("   AZURE_DEPLOYMENT_NAME=your-deployment")
-        print("   AZURE_API_VERSION=2024-02-15-preview")
-        return 1
 
     try:
         llm = LLMManager()
