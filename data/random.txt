@@ -1,0 +1,15 @@
+# Random values for client-side sorting
+orange
+42
+apple
+7
+banana
+100
+zebra
+3
+alpha
+88
+gamma
+55
+omega
+12
