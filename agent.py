@@ -34,13 +34,45 @@ class Agent:
         return content[:1024].hex()
 
     @staticmethod
-    def _extract_json(text: str) -> Any:
+    def _extract_json(text: Optional[str]) -> Any:
+        """Extract JSON from text, handling truncated responses."""
+        if text is None:
+            return None
+        
+        # Try to find complete JSON first
         start = text.find("{")
         if start == -1:
             return None
-        end = text.rfind("}")
-        if end == -1 or end <= start:
-            return None
+        
+        # Try to find the end of JSON (matching braces)
+        brace_count = 0
+        end = -1
+        for i in range(start, len(text)):
+            if text[i] == '{':
+                brace_count += 1
+            elif text[i] == '}':
+                brace_count -= 1
+                if brace_count == 0:
+                    end = i
+                    break
+        
+        if end == -1:
+            # JSON is incomplete, try to extract what we can
+            # Look for valid JSON up to the last complete field
+            json_str = text[start:]
+            # Try to complete common truncated patterns
+            if json_str.rstrip().endswith('"'):
+                json_str += '}'
+            elif json_str.rstrip().endswith(','):
+                json_str = json_str.rstrip()[:-1] + '}'
+            else:
+                json_str = json_str.rstrip() + '"}'
+            
+            try:
+                return json.loads(json_str)
+            except json.JSONDecodeError:
+                return None
+        
         try:
             return json.loads(text[start:end + 1])
         except json.JSONDecodeError:
@@ -67,7 +99,10 @@ class Agent:
             return key
         rows.sort(key=key_func, reverse=sort_order == "desc")
         output = io.StringIO()
-        writer = csv.DictWriter(output, fieldnames=reader.fieldnames)
+        fieldnames = reader.fieldnames
+        if not fieldnames:
+            return text
+        writer = csv.DictWriter(output, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
         return output.getvalue()
