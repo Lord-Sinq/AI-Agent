@@ -4,7 +4,7 @@ Minimal instructions to set up and run the project locally.
 
 Prerequisites
 
-- Python 3.8+ and Git
+- Python 3.10+ and Git
 
 Create and activate a virtual environment (Windows PowerShell):
 
@@ -25,9 +25,7 @@ python -m pip install -r requirements.txt
 Run the application from the venv:
 
 ```powershell
-# Data agent: organize a data file using the LLM
-c:/Users/xxsta/Documents/GitHub/AI-Agent/venv/Scripts/python.exe .\main.py --agent data --file data/employees.csv --task organize --provider echo
-
-# Verifier agent: review whether the data is organized in the best way
-c:/Users/xxsta/Documents/GitHub/AI-Agent/venv/Scripts/python.exe .\main.py --agent verifier --file data/employees.csv --task verify --provider echo
+python main.py
 ```
+From the main file you can pick from a list of data files stored in the data folder.
+After picking a file it will be passed though both verifier and data constructor agent. 
