@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  ai-agent:
+    build: .
+    container_name: ai-agent
+    stdin_open: true  # Keep stdin open for interactive input
+    tty: true         # Allocate a pseudo-TTY
+    environment:
+      # Pass environment variables from host
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
+      - AZURE_DEPLOYMENT_NAME=${AZURE_DEPLOYMENT_NAME}
+      - AZURE_API_VERSION=${AZURE_API_VERSION}
+      - DEFAULT_MODEL=${DEFAULT_MODEL}
+    volumes:
+      # Mount data directory so users can add their files
+      - ./data:/app/data
+    # For interactive CLI
+    entrypoint: ["python", "main.py"]

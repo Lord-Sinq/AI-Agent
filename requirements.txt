@@ -1,12 +1,2 @@
-langchain
-wikipedia
-langchain-community
-langchain-openai
-langchain-anthropic
-python-dotenv
-pydantic
-fastapi
-uvicorn
-python-multipart
 python-dotenv>=1.0.0
 requests>=2.31.0
