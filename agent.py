@@ -26,7 +26,10 @@ class Agent:
 
     @staticmethod
     def _prepare_text(content: bytes, mimetype: str) -> str:
-        if mimetype.startswith("text/") or mimetype in ("application/json", "application/csv"):
+        if mimetype.startswith("text/") or mimetype in (
+            "application/json",
+            "application/csv",
+        ):
             try:
                 return content.decode("utf-8")
             except Exception:
@@ -38,43 +41,43 @@ class Agent:
         """Extract JSON from text, handling truncated responses."""
         if text is None:
             return None
-        
+
         # Try to find complete JSON first
         start = text.find("{")
         if start == -1:
             return None
-        
+
         # Try to find the end of JSON (matching braces)
         brace_count = 0
         end = -1
         for i in range(start, len(text)):
-            if text[i] == '{':
+            if text[i] == "{":
                 brace_count += 1
-            elif text[i] == '}':
+            elif text[i] == "}":
                 brace_count -= 1
                 if brace_count == 0:
                     end = i
                     break
-        
+
         if end == -1:
             # JSON is incomplete, try to extract what we can
             # Look for valid JSON up to the last complete field
             json_str = text[start:]
             # Try to complete common truncated patterns
             if json_str.rstrip().endswith('"'):
-                json_str += '}'
-            elif json_str.rstrip().endswith(','):
-                json_str = json_str.rstrip()[:-1] + '}'
+                json_str += "}"
+            elif json_str.rstrip().endswith(","):
+                json_str = json_str.rstrip()[:-1] + "}"
             else:
                 json_str = json_str.rstrip() + '"}'
-            
+
             try:
                 return json.loads(json_str)
             except json.JSONDecodeError:
                 return None
-        
+
         try:
-            return json.loads(text[start:end + 1])
+            return json.loads(text[start : end + 1])
         except json.JSONDecodeError:
             return None
 
@@ -94,9 +97,11 @@ class Agent:
         if not rows or sort_keys is None:
             return text
         sort_order = sort_order.lower() if sort_order else "asc"
+
         def key_func(row: Dict[str, str]) -> Any:
             key = [Agent._coerce_value(row.get(k, "")) for k in sort_keys]
             return key
+
         rows.sort(key=key_func, reverse=sort_order == "desc")
         output = io.StringIO()
         fieldnames = reader.fieldnames
@@ -112,7 +117,10 @@ class Agent:
         lines = [l for l in text.splitlines() if l.strip()]
         sort_order = sort_order.lower() if sort_order else "asc"
         if sort_method == "numeric":
-            lines.sort(key=lambda l: Agent._coerce_value(l.strip()), reverse=sort_order == "desc")
+            lines.sort(
+                key=lambda l: Agent._coerce_value(l.strip()),
+                reverse=sort_order == "desc",
+            )
         else:
             lines.sort(key=lambda l: l.lower(), reverse=sort_order == "desc")
         return "\n".join(lines)
@@ -166,7 +174,11 @@ class DataAgent(Agent):
         llm_resp = self.llm.generate(prompt, model=model, provider=provider)
         analysis_text = llm_resp.get("text")
         plan = self._extract_json(analysis_text) or {}
-        sorted_preview = self._sort_text_lines(sample, plan.get("sort_method", "lexicographic"), plan.get("sort_order", "asc"))
+        sorted_preview = self._sort_text_lines(
+            sample,
+            plan.get("sort_method", "lexicographic"),
+            plan.get("sort_order", "asc"),
+        )
         return {
             "meta": meta,
             "analysis": analysis_text,

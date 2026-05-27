@@ -12,9 +12,9 @@ class LLMManager:
         self.azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
         self.azure_deployment_name = os.getenv("AZURE_DEPLOYMENT_NAME")
         self.azure_api_version = os.getenv("AZURE_API_VERSION", "2024-02-15-preview")
-        
+
         self.default_model = os.getenv("DEFAULT_MODEL", "gpt-4o-mini")
-        
+
         print(f"[INFO] Endpoint: {self.azure_endpoint}")
         print(f"[INFO] Deployment: {self.azure_deployment_name}")
         print(f"[INFO] API Version: {self.azure_api_version}")
@@ -22,7 +22,7 @@ class LLMManager:
 
     def generate(self, prompt: str, model: Optional[str] = None, provider: Optional[str] = None) -> dict:
         model = model or self.default_model
-        
+
         if provider is None:
             if self.azure_endpoint and self.azure_api_key and self.azure_deployment_name:
                 provider = "azure"
@@ -35,30 +35,35 @@ class LLMManager:
         if provider == "azure":
             if not (self.azure_endpoint and self.azure_api_key and self.azure_deployment_name):
                 raise RuntimeError("Azure OpenAI not fully configured")
-            
+
             # Clean up endpoint
-            base_endpoint = self.azure_endpoint.rstrip('/')
-            
+            base_endpoint = self.azure_endpoint.rstrip("/")
+
             # Construct URL for chat completions
             url = f"{base_endpoint}/openai/deployments/{self.azure_deployment_name}/chat/completions?api-version={self.azure_api_version}"
-            
-            print(f"[INFO] Calling Azure OpenAI...")
-            
-            headers = {"api-key": self.azure_api_key, "Content-Type": "application/json"}
+
+            print("[INFO] Calling Azure OpenAI...")
+
+            headers = {
+                "api-key": self.azure_api_key,
+                "Content-Type": "application/json",
+            }
             payload = {
                 "messages": [{"role": "user", "content": prompt}],
                 "max_tokens": 512,
-                "temperature": 0.7
+                "temperature": 0.7,
             }
-            
+
             try:
                 r = requests.post(url, json=payload, headers=headers, timeout=30)
                 r.raise_for_status()
                 j = r.json()
-                text = j.get("choices", [{}])[0].get("message", {}).get("content") or j.get("choices", [{}])[0].get("text")
+                text = j.get("choices", [{}])[0].get("message", {}).get("content") or j.get("choices", [{}])[0].get(
+                    "text"
+                )
                 return {"text": text, "raw": j}
             except requests.exceptions.RequestException as e:
-                if hasattr(r, 'status_code') and r.status_code == 404:
+                if hasattr(r, "status_code") and r.status_code == 404:
                     # Provide helpful suggestions
                     working_models = ["gpt-4o-mini", "gpt-35-turbo", "gpt-4o", "gpt-4"]
                     raise RuntimeError(
@@ -79,39 +84,39 @@ class LLMManager:
         if not (self.azure_endpoint and self.azure_api_key):
             raise RuntimeError("Azure OpenAI listing requires AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY")
 
-        base_endpoint = self.azure_endpoint.rstrip('/')
+        base_endpoint = self.azure_endpoint.rstrip("/")
         headers = {"api-key": self.azure_api_key, "Content-Type": "application/json"}
         list_api_version = "2024-02-15-preview"
-        
+
         # List all models (this endpoint works for you)
         url = f"{base_endpoint}/openai/models?api-version={list_api_version}"
-        
+
         try:
             r = requests.get(url, headers=headers, timeout=30)
             if r.status_code == 200:
                 j = r.json()
                 data = j.get("data", [])
-                
+
                 # Filter for chat-capable models
                 chat_models = []
-                chat_keywords = ['gpt', 'chat', 'instruct', 'turbo', 'deepseek']
-                
+                chat_keywords = ["gpt", "chat", "instruct", "turbo", "deepseek"]
+
                 for item in data:
                     if isinstance(item, dict):
                         model_id = item.get("id")
                         if model_id and any(keyword in model_id.lower() for keyword in chat_keywords):
                             chat_models.append({"id": model_id, "chat_completion": True})
-                
+
                 # Sort and display
-                chat_models.sort(key=lambda x: x['id'])
-                
+                chat_models.sort(key=lambda x: x["id"])
+
                 print(f"\n✅ Found {len(chat_models)} chat-capable models:")
                 print("=" * 50)
                 for model in chat_models[:20]:  # Show first 20
                     print(f"  • {model['id']}")
                 if len(chat_models) > 20:
                     print(f"  ... and {len(chat_models) - 20} more")
-                
+
                 return {
                     "route": "/openai/models",
                     "api_version": list_api_version,

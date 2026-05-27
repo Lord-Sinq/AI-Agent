@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -15,14 +16,17 @@ def list_available_files(data_dir: str = "data") -> list:
     p = Path(data_dir)
     if not p.exists():
         return []
-    
+
     # Filter out .gitkeep and any hidden files
-    return sorted([
-        f.name for f in p.iterdir() 
-        if f.is_file() 
-        and f.name != ".gitkeep"  # Exclude git placeholder
-        and not f.name.startswith(".")  # Exclude hidden files (optional)
-    ])
+    return sorted(
+        [
+            f.name
+            for f in p.iterdir()
+            if f.is_file()
+            and f.name != ".gitkeep"  # Exclude git placeholder
+            and not f.name.startswith(".")  # Exclude hidden files (optional)
+        ]
+    )
 
 
 def select_file_interactive(data_dir: str = "data") -> str:
@@ -30,11 +34,11 @@ def select_file_interactive(data_dir: str = "data") -> str:
     files = list_available_files(data_dir)
     if not files:
         raise FileNotFoundError(f"No files found in '{data_dir}' directory")
-    
+
     print(f"\nAvailable files in '{data_dir}':")
     for i, f in enumerate(files, 1):
         print(f"  {i}. {f}")
-    
+
     while True:
         try:
             choice = input(f"\nSelect a file (1-{len(files)}): ").strip()
@@ -49,9 +53,23 @@ def select_file_interactive(data_dir: str = "data") -> str:
 
 def build_parser():
     p = argparse.ArgumentParser(description="AI-Agent CLI — process and verify data organization with LLM agents")
-    p.add_argument("--file", "-f", default=None, help="Path to the file to process (if not provided, you'll be prompted to select)")
-    p.add_argument("--model", "-m", default=None, help="Model name to request from the LLM provider")
-    p.add_argument("--list-deployments", action="store_true", help="List available Azure OpenAI deployments")
+    p.add_argument(
+        "--file",
+        "-f",
+        default=None,
+        help="Path to the file to process (if not provided, you'll be prompted to select)",
+    )
+    p.add_argument(
+        "--model",
+        "-m",
+        default=None,
+        help="Model name to request from the LLM provider",
+    )
+    p.add_argument(
+        "--list-deployments",
+        action="store_true",
+        help="List available Azure OpenAI deployments",
+    )
     return p
 
 
@@ -87,29 +105,30 @@ def main():
     try:
         print(f"\n📄 Processing file: {file_path}")
         print("=" * 60)
-        
+
         # Run DataAgent (organizer)
         print("\n[1/2] Running Data Organizer Agent...")
         data_agent = DataAgent(llm)
         organize_result = data_agent.organize_file(file_path, model=args.model)
         print("✅ Data Organizer Agent completed")
-        
+
         # Run VerifierAgent
         print("\n[2/2] Running Verifier Agent...")
         verifier_agent = VerifierAgent(llm)
         verify_result = verifier_agent.verify_organization(file_path, model=args.model)
         print("✅ Verifier Agent completed")
-        
+
         # Combine results
         combined_output = {
             "file": file_path,
             "organizer": organize_result,
-            "verifier": verify_result
+            "verifier": verify_result,
         }
-        
+
     except Exception as e:
         print(f"\n❌ Error during processing: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 
