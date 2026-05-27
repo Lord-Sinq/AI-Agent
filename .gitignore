@@ -37,7 +37,7 @@ env/
 .mypy_cache/
 
 # VS Code
-# .vscode/
+.vscode/
 
 # IDEs
 .idea/
