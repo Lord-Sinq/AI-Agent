@@ -85,6 +85,46 @@ docker-compose run --rm ai-agent # Run once and exit
 docker ps # List running containers
 docker logs ai-agent # View container logs
 
+### Local Python Development (Without Docker)
+
+#### 1. Clone and create virtual environment
+
+git clone https://github.com/Lord-Sinq/AI-Agent
+cd AI-Agent
+python -m venv venv
+
+#### 2. Activate virtual environment
+
+Windows PowerShell:
+.\venv\Scripts\Activate.ps1
+
+Windows Command Prompt:
+venv\Scripts\activate.bat
+
+Mac/Linux:
+source venv/bin/activate
+
+#### 3. Install dependencies
+
+pip install -r requirements.txt
+
+#### 4. Set up environment variables
+
+```
+cp .env.example .env
+```
+
+##### Edit .env with your credentials
+
+#### 5. Open in VS Code
+
+VS Code will prompt you to install recommended extensions (Python, Pylance, etc.)
+
+#### 6. Run or debug
+
+- Press F5 to debug main.py
+- Or run: python main.py
+
 ## Project Structure
 
 AI-Agent/
