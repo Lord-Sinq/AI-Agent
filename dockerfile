@@ -28,9 +28,13 @@ COPY main.py llms.py agent.py ./
 # Create data directory
 RUN mkdir -p /app/data
 
-# Create non-root user for security
+# Create the user with a proper home directory AND bash shell
 RUN addgroup --system appgroup && \
-    adduser --system --ingroup appgroup appuser
+    adduser --system --ingroup appgroup --shell /bin/bash --home /home/appuser appuser
+
+# Create and set permissions for VS Code server directory
+RUN mkdir -p /home/appuser/.vscode-server && \
+    chown -R appuser:appgroup /home/appuser
 
 # Switch to non-root user
 USER appuser

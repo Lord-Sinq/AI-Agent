@@ -4,17 +4,17 @@ services:
   ai-agent:
     build: .
     container_name: ai-agent
-    stdin_open: true  # Keep stdin open for interactive input
-    tty: true         # Allocate a pseudo-TTY
+    stdin_open: true
+    tty: true
     environment:
-      # Pass environment variables from host
       - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
       - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
       - AZURE_DEPLOYMENT_NAME=${AZURE_DEPLOYMENT_NAME}
       - AZURE_API_VERSION=${AZURE_API_VERSION}
       - DEFAULT_MODEL=${DEFAULT_MODEL}
     volumes:
-      # Mount data directory so users can add their files
+      # Mount BOTH data and source code for development
       - ./data:/app/data
-    # For interactive CLI
-    entrypoint: ["python", "main.py"]
+      - .:/app  # This allows live code editing from VS Code
+    # Users will run python manually from VS Code terminal
+    command: ["tail", "-f", "/dev/null"]  # Keeps container alive
