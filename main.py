@@ -1,3 +1,22 @@
+"""
+AI-Agent CLI Module
+
+Command-line interface for processing and verifying data organization using LLM agents.
+This module orchestrates the interaction between DataAgent (for organizing data) and
+VerifierAgent (for validating organization), with Azure OpenAI as the LLM backend.
+
+The CLI provides:
+    - Interactive file selection from a data directory
+    - Optional command-line file specification
+    - Model selection for LLM requests
+    - Deployment listing functionality for Azure OpenAI
+    - Combined output from both organizer and verifier agents
+
+Environment Variables Required:
+    All Azure OpenAI variables as defined in the llms module
+    (AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, AZURE_DEPLOYMENT_NAME)
+"""
+
 import argparse
 import json
 import os
@@ -12,7 +31,19 @@ from agent import DataAgent, VerifierAgent
 
 
 def list_available_files(data_dir: str = "data") -> list:
-    """List all available files in the data directory."""
+    """
+    List all available files in the data directory.
+
+    Scans the specified directory and returns a sorted list of filenames,
+    excluding hidden files and the .gitkeep placeholder file.
+
+    Args:
+        data_dir (str): Path to the data directory to scan. Defaults to "data".
+
+    Returns:
+        list: A sorted list of filenames (strings) found in the directory.
+            Returns an empty list if the directory doesn't exist.
+    """
     p = Path(data_dir)
     if not p.exists():
         return []
@@ -30,7 +61,21 @@ def list_available_files(data_dir: str = "data") -> list:
 
 
 def select_file_interactive(data_dir: str = "data") -> str:
-    """Prompt user to select a file from the data directory."""
+    """
+    Prompt user to select a file from the data directory.
+
+    Displays a numbered list of available files and asks the user to make
+    a selection. Continues prompting until a valid choice is made.
+
+    Args:
+        data_dir (str): Path to the data directory to scan. Defaults to "data".
+
+    Returns:
+        str: Full path to the selected file as a string.
+
+    Raises:
+        FileNotFoundError: If no files are found in the specified directory.
+    """
     files = list_available_files(data_dir)
     if not files:
         raise FileNotFoundError(f"No files found in '{data_dir}' directory")
@@ -52,6 +97,18 @@ def select_file_interactive(data_dir: str = "data") -> str:
 
 
 def build_parser():
+    """
+    Build and configure the command-line argument parser.
+
+    Creates an ArgumentParser with options for file selection, model specification,
+    and deployment listing.
+
+    Returns:
+        argparse.ArgumentParser: Configured argument parser with the following options:
+            --file, -f: Path to the file to process
+            --model, -m: Model name to use for LLM requests
+            --list-deployments: Flag to list available Azure OpenAI deployment
+    """
     p = argparse.ArgumentParser(description="AI-Agent CLI — process and verify data organization with LLM agents")
     p.add_argument(
         "--file",
@@ -74,6 +131,26 @@ def build_parser():
 
 
 def main():
+    """
+    Main entry point for the AI-Agent CLI.
+
+    Orchestrates the entire workflow:
+        1. Initializes the LLM Manager with Azure OpenAI configuration
+        2. Handles deployment listing if requested
+        3. Selects or accepts input file
+        4. Runs DataAgent to organize the file
+        5. Runs VerifierAgent to validate organization
+        6. Combines and displays results as JSON
+
+    Returns:
+        int: Exit code (0 for success, 1 for error)
+
+    The function handles various error cases:
+        - Missing LLM configuration
+        - File not found
+        - Agent processing errors
+        - API failures
+    """
     parser = build_parser()
     args = parser.parse_args()
 

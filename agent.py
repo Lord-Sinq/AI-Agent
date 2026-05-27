@@ -1,3 +1,24 @@
+"""
+Agent Module for LLM-Powered Data Organization and Verification
+
+This module provides a set of agent classes that leverage Large Language Models
+(LLMs) to analyze, organize, and verify data files. The agents can handle various
+file types including CSV, JSON, and text files, providing intelligent sorting
+recommendations and quality verification.
+
+Classes:
+    Agent: Base class providing common file processing utilities
+    DataAgent: Analyzes files and recommends optimal organization strategies
+    VerifierAgent: Validates existing file organization and suggests improvements
+
+Features:
+    - Automatic MIME type detection
+    - CSV column-based sorting recommendations
+    - Text line sorting (numeric or lexicographic)
+    - JSON extraction from LLM responses
+    - File preview generation for large files
+"""
+
 import csv
 import io
 import json
@@ -8,13 +29,40 @@ from llms import LLMManager
 
 
 class Agent:
-    """Base agent for file and data processing."""
+    """
+    Base agent for file and data processing.
+
+    Provides common utility methods for file handling, MIME type detection,
+    text preparation, JSON extraction, and sorting operations. This class is
+    meant to be inherited by specialized agents like DataAgent and VerifierAgent.
+    """
 
     def __init__(self, llm_manager: LLMManager):
+        """
+        Initialize an Agent with an LLM manager.
+
+        Args:
+            llm_manager (LLMManager): Configured LLM manager instance for
+                making API calls to the language model
+        """
         self.llm = llm_manager
 
     @staticmethod
     def detect_mimetype(filename: str, content: bytes) -> str:
+        """
+        Detect the MIME type of a file based on its name and content.
+
+        Uses mimetypes.guess_type() for extension-based detection, with fallback
+        logic for common binary formats like PDF and JSON.
+
+        Args:
+            filename (str): Name of the file (used for extension detection)
+            content (bytes): Raw file content for binary signature detection
+
+        Returns:
+            str: Detected MIME type (e.g., "application/json", "text/csv",
+                "application/pdf", or "application/octet-stream" for unknown types
+        """
         mt, _ = mimetypes.guess_type(filename)
         if not mt:
             if content.startswith(b"%PDF"):
@@ -26,6 +74,19 @@ class Agent:
 
     @staticmethod
     def _prepare_text(content: bytes, mimetype: str) -> str:
+        """
+        Convert file content to a text representation for LLM processing.
+
+        For text-based files, attempts UTF-8 decoding with fallback to latin-1.
+        For binary files, returns a hex representation of the first 1KB.
+
+        Args:
+            content (bytes): Raw file content
+            mimetype (str): MIME type of the content
+
+        Returns:
+            str: Text representation of the content suitable for LLM consumption
+        """
         if mimetype.startswith("text/") or mimetype in (
             "application/json",
             "application/csv",
@@ -38,7 +99,19 @@ class Agent:
 
     @staticmethod
     def _extract_json(text: Optional[str]) -> Any:
-        """Extract JSON from text, handling truncated responses."""
+        """
+        Extract JSON from text, handling truncated or malformed responses.
+
+        Attempts to locate complete JSON objects by matching braces. If the JSON
+        is incomplete, tries to repair common truncation patterns (missing closing
+        braces or trailing commas).
+
+        Args:
+            text (Optional[str]): Text that may contain JSON data
+
+        Returns:
+            Any: Parsed JSON data (dict, list, etc.) or None if extraction fails
+        """
         if text is None:
             return None
 
@@ -83,6 +156,18 @@ class Agent:
 
     @staticmethod
     def _coerce_value(value: str) -> Any:
+        """
+        Convert a string value to its appropriate data type.
+
+        Attempts to convert to integer or float if numeric, otherwise returns
+        lowercase version of the string for case-insensitive comparison.
+
+        Args:
+            value (str): String value to convert
+
+        Returns:
+            Any: Converted value (int, float, or lowercase string)
+        """
         try:
             if "." in value:
                 return float(value)
@@ -92,6 +177,20 @@ class Agent:
 
     @staticmethod
     def _sort_csv_text(text: str, sort_keys: List[str], sort_order: str) -> str:
+        """
+        Sort CSV content by specified columns.
+
+        Reads CSV as DictReader, sorts rows based on the provided column keys,
+        and returns a new CSV string with sorted data.
+
+        Args:
+            text (str): CSV content as string
+            sort_keys (List[str]): Column names to sort by (ordered by priority)
+            sort_order (str): "asc" for ascending, "desc" for descending
+
+        Returns:
+            str: Sorted CSV content as string. Returns original text if sorting fails.
+        """
         reader = csv.DictReader(io.StringIO(text))
         rows = list(reader)
         if not rows or sort_keys is None:
@@ -114,6 +213,20 @@ class Agent:
 
     @staticmethod
     def _sort_text_lines(text: str, sort_method: str, sort_order: str) -> str:
+        """
+        Sort lines of text using specified method.
+
+        Supports numeric sorting (converts lines to numbers) or lexicographic
+        (alphabetical) sorting with case-insensitive comparison.
+
+        Args:
+            text (str): Text content with lines separated by newlines
+            sort_method (str): "numeric" for numerical sorting, otherwise lexicographic
+            sort_order (str): "asc" for ascending, "desc" for descending
+
+        Returns:
+            str: Sorted text with lines joined by newlines
+        """
         lines = [l for l in text.splitlines() if l.strip()]
         sort_order = sort_order.lower() if sort_order else "asc"
         if sort_method == "numeric":
@@ -127,9 +240,37 @@ class Agent:
 
 
 class DataAgent(Agent):
-    """Agent that organizes data/files into a better structure using LLM guidance."""
+    """
+    Agent that organizes data/files into a better structure using LLM guidance.
+
+    This agent analyzes file content (CSV or text) and uses an LLM to recommend
+    optimal organization strategies such as sorting by specific columns or using
+    numeric/lexicographic ordering.
+
+    The agent:
+        1. Reads and prepares file content
+        2. Builds a prompt based on file type
+        3. Queries the LLM for organization recommendations
+        4. Applies the recommendations to generate a sorted preview
+        5. Returns analysis, plan, and preview
+    """
 
     def _build_organize_prompt(self, filename: str, sample: str, mimetype: str) -> str:
+        """
+        Build a prompt for the LLM to analyze and recommend organization.
+
+        Creates different prompts for CSV vs. text files. CSV prompts ask for
+        column-based sorting recommendations, while text prompts ask for line-based
+        sorting (numeric or lexicographic).
+
+        Args:
+            filename (str): Name of the file being analyzed
+            sample (str): Sample content from the file (first few lines/rows)
+            mimetype (str): MIME type of the file
+
+        Returns:
+            str: Formatted prompt for the LLM
+        """
         if mimetype == "text/csv" or filename.lower().endswith(".csv"):
             return (
                 "You are a data organization expert. The following CSV file contains tabular records. "
@@ -145,6 +286,29 @@ class DataAgent(Agent):
         )
 
     def organize_file(self, path: str, model: Optional[str] = None, provider: Optional[str] = None) -> dict:
+        """
+        Analyze and organize a file using LLM recommendations.
+
+        Reads the specified file, detects its type, generates a sample, queries
+        the LLM for organization strategy, applies the strategy to create a sorted
+        preview, and returns comprehensive results.
+
+        Args:
+            path (str): Path to the file to organize
+            model (Optional[str]): Specific LLM model to use (overrides default)
+            provider (Optional[str]): LLM provider to use (defaults to Azure OpenAI)
+
+        Returns:
+            dict: A dictionary containing:
+                - "meta": File metadata (filename, content_type, size)
+                - "analysis": Raw LLM response text
+                - "plan": Parsed JSON recommendations from LLM
+                - "sorted_preview": Preview of sorted content after applying plan
+                - "raw": Complete LLM API response
+
+        Raises:
+            FileNotFoundError: If the specified file doesn't exist
+        """
         p = Path(path)
         if not p.exists():
             raise FileNotFoundError(f"File not found: {path}")
@@ -189,9 +353,36 @@ class DataAgent(Agent):
 
 
 class VerifierAgent(Agent):
-    """Agent that verifies whether data is organized in the best possible way."""
+    """
+    Agent that verifies whether data is organized in the best possible way.
+
+    This agent analyzes already-organized files and uses an LLM to validate
+    whether the current organization is optimal. It can suggest improvements
+    if better organization strategies exist.
+
+    The agent:
+        1. Reads and prepares file content
+        2. Builds a verification prompt based on file type
+        3. Queries the LLM to assess the current organization
+        4. Returns a verdict (valid/invalid) with recommendations
+    """
 
     def _build_verification_prompt(self, filename: str, sample: str, mimetype: str) -> str:
+        """
+        Build a prompt for the LLM to verify file organization.
+
+        Creates different prompts for CSV vs. text files. CSV prompts check if
+        column-based sorting is optimal, while text prompts check line-based
+        organization.
+
+        Args:
+            filename (str): Name of the file being verified
+            sample (str): Sample content from the file (first few lines/rows)
+            mimetype (str): MIME type of the file
+
+        Returns:
+            str: Formatted prompt for the LLM
+        """
         if mimetype == "text/csv" or filename.lower().endswith(".csv"):
             return (
                 "You are a data quality expert. The following CSV file is already organized in some order. "
@@ -209,6 +400,32 @@ class VerifierAgent(Agent):
         )
 
     def verify_organization(self, path: str, model: Optional[str] = None, provider: Optional[str] = None) -> dict:
+        """
+        Verify if a file's organization is optimal using LLM assessment.
+
+        Reads the specified file, detects its type, generates a sample, queries
+        the LLM to evaluate the current organization, and returns a verdict
+        with recommendations for improvement if needed.
+
+        Args:
+            path (str): Path to the file to verify
+            model (Optional[str]): Specific LLM model to use (overrides default)
+            provider (Optional[str]): LLM provider to use (defaults to Azure OpenAI)
+
+        Returns:
+            dict: A dictionary containing:
+                - "meta": File metadata (filename, content_type, size)
+                - "analysis": Raw LLM response text
+                - "verdict": Parsed JSON verdict containing:
+                    - "valid": Boolean indicating if organization is optimal
+                    - "recommendation": Text recommendation
+                    - "why": Explanation of the verdict
+                    - "suggested_sort_keys" or "suggested_sort_method": Improvement suggestions
+                - "raw": Complete LLM API response
+
+        Raises:
+            FileNotFoundError: If the specified file doesn't exist
+        """
         p = Path(path)
         if not p.exists():
             raise FileNotFoundError(f"File not found: {path}")

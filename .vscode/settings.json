@@ -12,9 +12,9 @@
     "editor.formatOnSaveMode": "file"
   },
   "black-formatter.args": [
-    "--line-length=120"
+    "--line-length=140"
   ],
   "pylint.args": [
-    "--max-line-length=120"
+    "--max-line-length=140"
   ]
 }

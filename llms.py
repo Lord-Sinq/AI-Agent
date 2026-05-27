@@ -1,10 +1,47 @@
+"""
+LLM Manager Module
+
+This module provides a unified interface for interacting with Large Language Models (LLMs),
+with primary support for Azure OpenAI. It handles configuration, authentication, and API
+calls to generate text completions using chat-based models.
+
+Environment Variables Required for Azure OpenAI:
+    AZURE_OPENAI_ENDPOINT: Your Azure OpenAI endpoint URL
+    AZURE_OPENAI_API_KEY: Your Azure OpenAI API key
+    AZURE_DEPLOYMENT_NAME: Name of your deployed model
+    AZURE_API_VERSION: API version (defaults to "2024-02-15-preview")
+    DEFAULT_MODEL: Default model to use (defaults to "gpt-4o-mini")
+
+"""
+
 import os
 import requests
 from typing import Optional
 
 
 class LLMManager:
-    """Manage LLM providers with priority: Azure OpenAI."""
+    """
+    Initialize the LLM Manager with Azure OpenAI configuration.
+
+    Loads configuration from environment variables and prints status information.
+    Currently uses Azure OpenAI as the primary provider (OpenAI API key parameter
+    is reserved for future implementation).
+
+    Args:
+        openai_api_key (Optional[str]): Legacy parameter for OpenAI API key.
+            Currently unused as the manager prioritizes Azure OpenAI.
+
+    Environment Variables Used:
+        AZURE_OPENAI_ENDPOINT: Required - Azure endpoint URL
+        AZURE_OPENAI_API_KEY: Required - Azure API key
+        AZURE_DEPLOYMENT_NAME: Required - Deployment name
+        AZURE_API_VERSION: Optional - Defaults to "2024-02-15-preview"
+        DEFAULT_MODEL: Optional - Defaults to "gpt-4o-mini"
+
+    Prints:
+        INFO messages showing the configuration status including endpoint,
+        deployment name, API version, and whether API key is configured
+    """
 
     def __init__(self, openai_api_key: Optional[str] = None):
         # Azure OpenAI configuration
@@ -21,6 +58,31 @@ class LLMManager:
         print(f"[INFO] API Key configured: {bool(self.azure_api_key)}")
 
     def generate(self, prompt: str, model: Optional[str] = None, provider: Optional[str] = None) -> dict:
+        """
+        Generate text completion from the configured LLM provider.
+
+        Sends a prompt to the LLM and returns the generated response. Currently
+        supports Azure OpenAI provider. Automatically selects the provider based
+        on available configuration if not specified.
+
+        Args:
+            prompt (str): The input text prompt to send to the LLM.
+            model (Optional[str]): Override the default model to use.
+                If None, uses self.default_model.
+            provider (Optional[str]): Specify which provider to use.
+                Currently only "azure" is supported. If None, automatically
+                selects based on available configuration.
+
+        Returns:
+            dict: A dictionary containing:
+                - "text": The generated text response from the LLM
+                - "raw": The complete JSON response from the API
+
+        Raises:
+            RuntimeError: If no provider is configured, if Azure OpenAI is not
+                properly configured, if the deployment doesn't support chat
+                completions, or if the API call fails.
+        """
         model = model or self.default_model
 
         if provider is None:
@@ -28,8 +90,7 @@ class LLMManager:
                 provider = "azure"
             else:
                 raise RuntimeError(
-                    "No LLM provider configured. Please set:\n"
-                    "  AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, AZURE_DEPLOYMENT_NAME\n"
+                    "No LLM provider configured. Please set:\n" "  AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, AZURE_DEPLOYMENT_NAME\n"
                 )
 
         if provider == "azure":
@@ -58,9 +119,7 @@ class LLMManager:
                 r = requests.post(url, json=payload, headers=headers, timeout=30)
                 r.raise_for_status()
                 j = r.json()
-                text = j.get("choices", [{}])[0].get("message", {}).get("content") or j.get("choices", [{}])[0].get(
-                    "text"
-                )
+                text = j.get("choices", [{}])[0].get("message", {}).get("content") or j.get("choices", [{}])[0].get("text")
                 return {"text": text, "raw": j}
             except requests.exceptions.RequestException as e:
                 if hasattr(r, "status_code") and r.status_code == 404:
@@ -74,13 +133,35 @@ class LLMManager:
                         f"  AZURE_DEPLOYMENT_NAME=gpt-4o       (Most Capable)\n\n"
                         f"Your current deployment: {self.azure_deployment_name}\n"
                         f"Run 'python main.py --list-deployments' to see all available models."
-                    )
-                raise RuntimeError(f"Azure OpenAI API call failed: {str(e)}")
+                    ) from e
+                raise RuntimeError(f"Azure OpenAI API call failed: {str(e)}") from e
 
         raise RuntimeError(f"Unknown provider: {provider}")
 
     def list_azure_deployments(self) -> dict:
-        """List available models that support chat completions."""
+        """
+        List available Azure OpenAI models that support chat completions.
+
+        Queries the Azure OpenAI API to retrieve all available models and filters
+        them to show only those capable of chat completions (GPT, chat, instruct,
+        turbo, or deepseek variants).
+
+        Returns:
+            dict: A dictionary containing:
+                - "route": The API endpoint used for listing models
+                - "api_version": The API version used
+                - "items": List of chat-capable model dictionaries with 'id' and
+                  'chat_completion' fields
+                - "raw": The complete JSON response from the API
+
+        Raises:
+            RuntimeError: If Azure endpoint or API key is not configured, or if
+                the API request fails.
+
+        Prints:
+            A formatted list of available chat-capable models, showing up to 20
+            models with proper formatting and counts.
+        """
         if not (self.azure_endpoint and self.azure_api_key):
             raise RuntimeError("Azure OpenAI listing requires AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY")
 
@@ -126,4 +207,4 @@ class LLMManager:
             else:
                 raise RuntimeError(f"Failed to list models: {r.status_code} - {r.text}")
         except Exception as e:
-            raise RuntimeError(f"Could not list Azure OpenAI models: {e}")
+            raise RuntimeError(f"Could not list Azure OpenAI models: {e}") from e
