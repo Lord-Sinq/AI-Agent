@@ -15,7 +15,10 @@ Environment Variables Required for Azure OpenAI:
 """
 
 import os
+import json
 import requests
+from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 
@@ -37,6 +40,7 @@ class LLMManager:
         AZURE_DEPLOYMENT_NAME: Required - Deployment name
         AZURE_API_VERSION: Optional - Defaults to "2024-02-15-preview"
         DEFAULT_MODEL: Optional - Defaults to "gpt-4o-mini"
+        SAVE_RESPONSES: Optional - Set to "true" to save all responses (default: true)
 
     Prints:
         INFO messages showing the configuration status including endpoint,
@@ -51,13 +55,61 @@ class LLMManager:
         self.azure_api_version = os.getenv("AZURE_API_VERSION", "2024-02-15-preview")
 
         self.default_model = os.getenv("DEFAULT_MODEL", "gpt-4o-mini")
+        self.save_responses = os.getenv("SAVE_RESPONSES", "true").lower() == "true"
+
+        # Create responses directory if saving is enabled
+        if self.save_responses:
+            self.responses_dir = Path.cwd() / "responses"
+            self.responses_dir.mkdir(exist_ok=True)
+            print(f"[INFO] Responses will be saved to: {self.responses_dir}")
 
         print(f"[INFO] Endpoint: {self.azure_endpoint}")
         print(f"[INFO] Deployment: {self.azure_deployment_name}")
         print(f"[INFO] API Version: {self.azure_api_version}")
         print(f"[INFO] API Key configured: {bool(self.azure_api_key)}")
+        print(f"[INFO] Save responses: {self.save_responses}")
 
-    def generate(self, prompt: str, model: Optional[str] = None, provider: Optional[str] = None) -> dict:
+    def _save_response(self, prompt: str, response: dict, model: str, max_tokens: int) -> None:
+        """
+        Save the LLM response to a file in the responses directory.
+
+        Args:
+            prompt (str): The input prompt sent to the LLM
+            response (dict): The response from the LLM
+            model (str): The model used for generation
+            max_tokens (int): The max_tokens parameter used
+        """
+        if not self.save_responses:
+            return
+
+        # Create timestamp for filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
+
+        # Create a descriptive filename
+        prompt_preview = prompt[:50].replace(" ", "_").replace("\n", "").replace("/", "_")
+        filename = f"{timestamp}_{model}_{prompt_preview}.json"
+        filepath = self.responses_dir / filename
+
+        # Prepare data to save
+        response_data = {
+            "timestamp": datetime.now().isoformat(),
+            "model": model,
+            "max_tokens": max_tokens,
+            "prompt": prompt,
+            "response": response,
+            "response_text": response.get("text", ""),
+            "response_length": len(response.get("text", "")),
+        }
+
+        # Save to file
+        try:
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(response_data, f, indent=2, ensure_ascii=False)
+            print(f"[INFO] Response saved to: {filepath}")
+        except Exception as e:
+            print(f"[WARNING] Failed to save response: {e}")
+
+    def generate(self, prompt: str, model: Optional[str] = None, provider: Optional[str] = None, max_tokens: int = 4000) -> dict:
         """
         Generate text completion from the configured LLM provider.
 
@@ -68,10 +120,11 @@ class LLMManager:
         Args:
             prompt (str): The input text prompt to send to the LLM.
             model (Optional[str]): Override the default model to use.
-                If None, uses self.default_model.
+                If None, uses self.azure_deployment_name.
             provider (Optional[str]): Specify which provider to use.
                 Currently only "azure" is supported. If None, automatically
                 selects based on available configuration.
+            max_tokens (int): Maximum number of tokens to generate. Default 4000.
 
         Returns:
             dict: A dictionary containing:
@@ -83,7 +136,7 @@ class LLMManager:
                 properly configured, if the deployment doesn't support chat
                 completions, or if the API call fails.
         """
-        model = model or self.default_model
+        model = model or self.azure_deployment_name
 
         if provider is None:
             if self.azure_endpoint and self.azure_api_key and self.azure_deployment_name:
@@ -103,7 +156,7 @@ class LLMManager:
             # Construct URL for chat completions
             url = f"{base_endpoint}/openai/deployments/{self.azure_deployment_name}/chat/completions?api-version={self.azure_api_version}"
 
-            print("[INFO] Calling Azure OpenAI...")
+            print(f"[INFO] Calling Azure OpenAI with max_tokens={max_tokens}...")
 
             headers = {
                 "api-key": self.azure_api_key,
@@ -111,16 +164,43 @@ class LLMManager:
             }
             payload = {
                 "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 512,
+                "max_tokens": max_tokens,
                 "temperature": 0.7,
             }
 
             try:
-                r = requests.post(url, json=payload, headers=headers, timeout=30)
+                r = requests.post(url, json=payload, headers=headers, timeout=60)
                 r.raise_for_status()
                 j = r.json()
-                text = j.get("choices", [{}])[0].get("message", {}).get("content") or j.get("choices", [{}])[0].get("text")
-                return {"text": text, "raw": j}
+
+                # Debug: print response structure
+                print(f"[DEBUG] Response keys: {j.keys()}")
+
+                # Handle different response formats
+                text = None
+                if "choices" in j and len(j["choices"]) > 0:
+                    choice = j["choices"][0]
+                    if "message" in choice and "content" in choice["message"]:
+                        text = choice["message"]["content"]
+                    elif "text" in choice:
+                        text = choice["text"]
+                    elif "content" in choice:
+                        text = choice["content"]
+
+                if not text:
+                    print(f"[WARNING] Unexpected response format: {json.dumps(j, indent=2)[:500]}")
+                    text = ""
+
+                print(f"[INFO] Generated {len(text)} characters of text")
+
+                # Create response dictionary
+                response = {"text": text, "raw": j}
+
+                # Save response if enabled
+                self._save_response(prompt, response, model, max_tokens)
+
+                return response
+
             except requests.exceptions.RequestException as e:
                 if hasattr(r, "status_code") and r.status_code == 404:
                     # Provide helpful suggestions

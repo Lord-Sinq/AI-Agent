@@ -1,68 +1,29 @@
 """
-Agent Module for LLM-Powered Data Organization and Verification
+Agent Module for LLM-Powered Data Science Pipeline
 
 This module provides a set of agent classes that leverage Large Language Models
-(LLMs) to analyze, organize, and verify data files. The agents can handle various
-file types including CSV, JSON, and text files, providing intelligent sorting
-recommendations and quality verification.
-
-Classes:
-    Agent: Base class providing common file processing utilities
-    DataAgent: Analyzes files and recommends optimal organization strategies
-    VerifierAgent: Validates existing file organization and suggests improvements
-
-Features:
-    - Automatic MIME type detection
-    - CSV column-based sorting recommendations
-    - Text line sorting (numeric or lexicographic)
-    - JSON extraction from LLM responses
-    - File preview generation for large files
+(LLMs) to perform specialized tasks in a data science workflow.
 """
 
 import csv
 import io
 import json
 import mimetypes
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from pathlib import Path
 from llms import LLMManager
 
 
 class Agent:
-    """
-    Base agent for file and data processing.
-
-    Provides common utility methods for file handling, MIME type detection,
-    text preparation, JSON extraction, and sorting operations. This class is
-    meant to be inherited by specialized agents like DataAgent and VerifierAgent.
-    """
+    """Base agent for file and data processing."""
 
     def __init__(self, llm_manager: LLMManager):
-        """
-        Initialize an Agent with an LLM manager.
-
-        Args:
-            llm_manager (LLMManager): Configured LLM manager instance for
-                making API calls to the language model
-        """
+        """Initialize an Agent with an LLM manager."""
         self.llm = llm_manager
 
     @staticmethod
     def detect_mimetype(filename: str, content: bytes) -> str:
-        """
-        Detect the MIME type of a file based on its name and content.
-
-        Uses mimetypes.guess_type() for extension-based detection, with fallback
-        logic for common binary formats like PDF and JSON.
-
-        Args:
-            filename (str): Name of the file (used for extension detection)
-            content (bytes): Raw file content for binary signature detection
-
-        Returns:
-            str: Detected MIME type (e.g., "application/json", "text/csv",
-                "application/pdf", or "application/octet-stream" for unknown types
-        """
+        """Detect the MIME type of a file based on its name and content."""
         mt, _ = mimetypes.guess_type(filename)
         if not mt:
             if content.startswith(b"%PDF"):
@@ -74,19 +35,7 @@ class Agent:
 
     @staticmethod
     def _prepare_text(content: bytes, mimetype: str) -> str:
-        """
-        Convert file content to a text representation for LLM processing.
-
-        For text-based files, attempts UTF-8 decoding with fallback to latin-1.
-        For binary files, returns a hex representation of the first 1KB.
-
-        Args:
-            content (bytes): Raw file content
-            mimetype (str): MIME type of the content
-
-        Returns:
-            str: Text representation of the content suitable for LLM consumption
-        """
+        """Convert file content to a text representation for LLM processing."""
         if mimetype.startswith("text/") or mimetype in (
             "application/json",
             "application/csv",
@@ -99,50 +48,64 @@ class Agent:
 
     @staticmethod
     def _extract_json(text: Optional[str]) -> Any:
-        """
-        Extract JSON from text, handling truncated or malformed responses.
-
-        Attempts to locate complete JSON objects by matching braces. If the JSON
-        is incomplete, tries to repair common truncation patterns (missing closing
-        braces or trailing commas).
-
-        Args:
-            text (Optional[str]): Text that may contain JSON data
-
-        Returns:
-            Any: Parsed JSON data (dict, list, etc.) or None if extraction fails
-        """
+        """Extract JSON from text, handling truncated or malformed responses."""
         if text is None:
             return None
 
-        # Try to find complete JSON first
         start = text.find("{")
         if start == -1:
-            return None
+            start = text.find("[")
+            if start == -1:
+                return None
 
-        # Try to find the end of JSON (matching braces)
         brace_count = 0
+        bracket_count = 0
         end = -1
+        in_string = False
+        escape_next = False
+
         for i in range(start, len(text)):
-            if text[i] == "{":
-                brace_count += 1
-            elif text[i] == "}":
-                brace_count -= 1
-                if brace_count == 0:
+            char = text[i]
+
+            if escape_next:
+                escape_next = False
+                continue
+
+            if char == "\\":
+                escape_next = True
+                continue
+
+            if char == '"' and not escape_next:
+                in_string = not in_string
+                continue
+
+            if not in_string:
+                if char == "{":
+                    brace_count += 1
+                elif char == "}":
+                    brace_count -= 1
+                elif char == "[":
+                    bracket_count += 1
+                elif char == "]":
+                    bracket_count -= 1
+
+                if brace_count == 0 and bracket_count == 0 and (char == "}" or char == "]"):
                     end = i
                     break
 
         if end == -1:
-            # JSON is incomplete, try to extract what we can
-            # Look for valid JSON up to the last complete field
             json_str = text[start:]
-            # Try to complete common truncated patterns
             if json_str.rstrip().endswith('"'):
                 json_str += "}"
             elif json_str.rstrip().endswith(","):
                 json_str = json_str.rstrip()[:-1] + "}"
             else:
-                json_str = json_str.rstrip() + '"}'
+                if json_str.rstrip().endswith("["):
+                    json_str = json_str.rstrip() + "]"
+                elif json_str.rstrip().endswith("{"):
+                    json_str = json_str.rstrip() + "}"
+                else:
+                    json_str = json_str.rstrip() + '"}'
 
             try:
                 return json.loads(json_str)
@@ -156,18 +119,7 @@ class Agent:
 
     @staticmethod
     def _coerce_value(value: str) -> Any:
-        """
-        Convert a string value to its appropriate data type.
-
-        Attempts to convert to integer or float if numeric, otherwise returns
-        lowercase version of the string for case-insensitive comparison.
-
-        Args:
-            value (str): String value to convert
-
-        Returns:
-            Any: Converted value (int, float, or lowercase string)
-        """
+        """Convert a string value to its appropriate data type."""
         try:
             if "." in value:
                 return float(value)
@@ -176,273 +128,412 @@ class Agent:
             return value.lower() if isinstance(value, str) else value
 
     @staticmethod
-    def _sort_csv_text(text: str, sort_keys: List[str], sort_order: str) -> str:
-        """
-        Sort CSV content by specified columns.
+    def _get_data_structure_info(content: str, mimetype: str, filename: str = "") -> Dict[str, Any]:
+        """Extract structural information from data content."""
+        lines = [l for l in content.splitlines() if l.strip()]
+        if not lines:
+            return {"rows": 0, "columns": 0, "headers": []}
 
-        Reads CSV as DictReader, sorts rows based on the provided column keys,
-        and returns a new CSV string with sorted data.
+        info: Dict[str, Any] = {"rows": len(lines), "sample_lines": min(10, len(lines))}
 
-        Args:
-            text (str): CSV content as string
-            sort_keys (List[str]): Column names to sort by (ordered by priority)
-            sort_order (str): "asc" for ascending, "desc" for descending
+        is_csv = mimetype == "text/csv" or filename.lower().endswith(".csv") or ("," in lines[0] and len(lines[0].split(",")) > 1)
 
-        Returns:
-            str: Sorted CSV content as string. Returns original text if sorting fails.
-        """
-        reader = csv.DictReader(io.StringIO(text))
-        rows = list(reader)
-        if not rows or sort_keys is None:
-            return text
-        sort_order = sort_order.lower() if sort_order else "asc"
+        if is_csv:
+            try:
+                csv_content = "\n".join(lines[:10])
+                csv_reader = csv.DictReader(io.StringIO(csv_content))
 
-        def key_func(row: Dict[str, str]) -> Any:
-            key = [Agent._coerce_value(row.get(k, "")) for k in sort_keys]
-            return key
+                if csv_reader.fieldnames:
+                    info["headers"] = list(csv_reader.fieldnames)
+                    info["columns"] = len(csv_reader.fieldnames)
 
-        rows.sort(key=key_func, reverse=sort_order == "desc")
-        output = io.StringIO()
-        fieldnames = reader.fieldnames
-        if not fieldnames:
-            return text
-        writer = csv.DictWriter(output, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
-        return output.getvalue()
+                    data_types: Dict[str, str] = {}
+                    rows_checked = 0
 
-    @staticmethod
-    def _sort_text_lines(text: str, sort_method: str, sort_order: str) -> str:
-        """
-        Sort lines of text using specified method.
+                    for row in csv_reader:
+                        if rows_checked >= 5:
+                            break
+                        for header in csv_reader.fieldnames:
+                            if header in row and row[header] and row[header].strip():
+                                val = row[header].strip()
+                                if val.isdigit():
+                                    data_types[header] = "numeric"
+                                elif val.replace(".", "").replace("-", "").isdigit():
+                                    data_types[header] = "float"
+                                else:
+                                    if header not in data_types:
+                                        data_types[header] = "categorical"
+                                    elif data_types[header] not in ["numeric", "float"]:
+                                        data_types[header] = "categorical"
+                        rows_checked += 1
 
-        Supports numeric sorting (converts lines to numbers) or lexicographic
-        (alphabetical) sorting with case-insensitive comparison.
+                    info["data_types"] = data_types
+                else:
+                    info["headers"] = []
+                    info["columns"] = 0
 
-        Args:
-            text (str): Text content with lines separated by newlines
-            sort_method (str): "numeric" for numerical sorting, otherwise lexicographic
-            sort_order (str): "asc" for ascending, "desc" for descending
-
-        Returns:
-            str: Sorted text with lines joined by newlines
-        """
-        lines = [l for l in text.splitlines() if l.strip()]
-        sort_order = sort_order.lower() if sort_order else "asc"
-        if sort_method == "numeric":
-            lines.sort(
-                key=lambda l: Agent._coerce_value(l.strip()),
-                reverse=sort_order == "desc",
-            )
+            except Exception as e:
+                info["csv_parse_error"] = str(e)
+                info["headers"] = []
+                info["columns"] = 0
         else:
-            lines.sort(key=lambda l: l.lower(), reverse=sort_order == "desc")
-        return "\n".join(lines)
+            info["headers"] = []
+            info["columns"] = 0
+            info["file_type"] = "text"
+
+            if content.strip().startswith("{") or content.strip().startswith("["):
+                info["is_json_likely"] = True
+                try:
+                    json_data = json.loads(content[:1000])
+                    if isinstance(json_data, dict):
+                        info["json_keys"] = list(json_data.keys())
+                        info["columns"] = len(json_data.keys())
+                    elif isinstance(json_data, list) and json_data:
+                        info["array_length"] = len(json_data)
+                        if isinstance(json_data[0], dict):
+                            info["json_keys"] = list(json_data[0].keys())
+                            info["columns"] = len(json_data[0].keys())
+                except Exception:
+                    pass
+
+        return info
 
 
-class DataAgent(Agent):
-    """
-    Agent that organizes data/files into a better structure using LLM guidance.
+class DomainExpertAgent(Agent):
+    """Agent that analyzes data from a domain-specific perspective."""
 
-    This agent analyzes file content (CSV or text) and uses an LLM to recommend
-    optimal organization strategies such as sorting by specific columns or using
-    numeric/lexicographic ordering.
-
-    The agent:
-        1. Reads and prepares file content
-        2. Builds a prompt based on file type
-        3. Queries the LLM for organization recommendations
-        4. Applies the recommendations to generate a sorted preview
-        5. Returns analysis, plan, and preview
-    """
-
-    def _build_organize_prompt(self, filename: str, sample: str, mimetype: str) -> str:
-        """
-        Build a prompt for the LLM to analyze and recommend organization.
-
-        Creates different prompts for CSV vs. text files. CSV prompts ask for
-        column-based sorting recommendations, while text prompts ask for line-based
-        sorting (numeric or lexicographic).
-
-        Args:
-            filename (str): Name of the file being analyzed
-            sample (str): Sample content from the file (first few lines/rows)
-            mimetype (str): MIME type of the file
-
-        Returns:
-            str: Formatted prompt for the LLM
-        """
-        if mimetype == "text/csv" or filename.lower().endswith(".csv"):
-            return (
-                "You are a data organization expert. The following CSV file contains tabular records. "
-                "Analyze the columns and rows, then recommend the best sort strategy and explain why it is the most useful. "
-                "Return JSON with fields: sort_keys (list of column names), sort_order (asc or desc), recommendation, and rationale. "
-                f"CSV sample:\n{sample}"
-            )
+    def _build_domain_prompt(self, filename: str, sample: str, mimetype: str, domain: str, structure_info: Dict[str, Any]) -> str:
+        """Build a prompt for the LLM to perform domain-specific analysis."""
         return (
-            "You are a data organization expert. The following text file contains data. "
-            "Analyze the structure and recommend the most appropriate organization strategy. "
-            "Return JSON with fields: sort_method (numeric or lexicographic), sort_order (asc or desc), recommendation, and rationale. "
-            f"Text sample:\n{sample}"
+            f"You are a {domain} domain expert and data analyst. Analyze the following data "
+            f"from a {domain} perspective.\n\n"
+            f"Filename: {filename}\n"
+            f"Data structure: {json.dumps(structure_info, indent=2)}\n\n"
+            f"Sample data:\n{sample}\n\n"
+            "Provide your analysis as JSON with the following fields:\n"
+            "- domain_insights (str): Key insights from a domain perspective\n"
+            "- key_metrics (list): Important metrics or KPIs to track\n"
+            "- data_quality_issues (list): Any data quality problems identified\n"
+            "- business_questions (list): Important questions this data could answer\n"
+            "- relevant_context (str): Domain-specific context or considerations\n"
+            "- data_limitations (list): Limitations of this dataset for domain analysis\n"
+            "Return ONLY valid JSON, no other text."
         )
 
-    def organize_file(self, path: str, model: Optional[str] = None, provider: Optional[str] = None) -> dict:
-        """
-        Analyze and organize a file using LLM recommendations.
-
-        Reads the specified file, detects its type, generates a sample, queries
-        the LLM for organization strategy, applies the strategy to create a sorted
-        preview, and returns comprehensive results.
-
-        Args:
-            path (str): Path to the file to organize
-            model (Optional[str]): Specific LLM model to use (overrides default)
-            provider (Optional[str]): LLM provider to use (defaults to Azure OpenAI)
-
-        Returns:
-            dict: A dictionary containing:
-                - "meta": File metadata (filename, content_type, size)
-                - "analysis": Raw LLM response text
-                - "plan": Parsed JSON recommendations from LLM
-                - "sorted_preview": Preview of sorted content after applying plan
-                - "raw": Complete LLM API response
-
-        Raises:
-            FileNotFoundError: If the specified file doesn't exist
-        """
+    def analyze_data(self, path: str, domain: str, model: Optional[str] = None, provider: Optional[str] = None) -> dict:
+        """Analyze data from a domain-specific perspective."""
         p = Path(path)
         if not p.exists():
             raise FileNotFoundError(f"File not found: {path}")
 
         content = p.read_bytes()
         mt = self.detect_mimetype(p.name, content)
-        meta = {"filename": p.name, "content_type": mt, "size": len(content)}
         text = self._prepare_text(content, mt)
 
-        if mt == "text/csv" or p.suffix.lower() == ".csv":
-            sample = "\n".join(text.splitlines()[:20])
-            prompt = self._build_organize_prompt(p.name, sample, mt)
-            llm_resp = self.llm.generate(prompt, model=model, provider=provider)
-            analysis_text = llm_resp.get("text")
-            plan = self._extract_json(analysis_text) or {}
-            sorted_preview = self._sort_csv_text(sample, plan.get("sort_keys", []), plan.get("sort_order", "asc"))
-            return {
-                "meta": meta,
-                "analysis": analysis_text,
-                "plan": plan,
-                "sorted_preview": sorted_preview,
-                "raw": llm_resp.get("raw", llm_resp),
-            }
+        structure_info = self._get_data_structure_info(text, mt, p.name)
+        sample = "\n".join(text.splitlines()[:30])
 
-        sample = "\n".join(text.splitlines()[:50])
-        prompt = self._build_organize_prompt(p.name, sample, mt)
+        prompt = self._build_domain_prompt(p.name, sample, mt, domain, structure_info)
         llm_resp = self.llm.generate(prompt, model=model, provider=provider)
-        analysis_text = llm_resp.get("text")
-        plan = self._extract_json(analysis_text) or {}
-        sorted_preview = self._sort_text_lines(
-            sample,
-            plan.get("sort_method", "lexicographic"),
-            plan.get("sort_order", "asc"),
-        )
+        analysis_text = llm_resp.get("text", "")
+
+        analysis = self._extract_json(analysis_text) or {}
+
         return {
-            "meta": meta,
-            "analysis": analysis_text,
-            "plan": plan,
-            "sorted_preview": sorted_preview,
-            "raw": llm_resp.get("raw", llm_resp),
+            "meta": {"filename": p.name, "content_type": mt, "size": len(content), "domain": domain},
+            "structure": structure_info,
+            "analysis": analysis,
+            "raw_response": llm_resp,
         }
 
 
-class VerifierAgent(Agent):
-    """
-    Agent that verifies whether data is organized in the best possible way.
+class FeatureEngineerAgent(Agent):
+    """Agent that creates and selects features for machine learning models."""
 
-    This agent analyzes already-organized files and uses an LLM to validate
-    whether the current organization is optimal. It can suggest improvements
-    if better organization strategies exist.
+    def _build_feature_prompt(
+        self, filename: str, sample: str, mimetype: str, target_variable: Optional[str], structure_info: Dict[str, Any]
+    ) -> str:
+        """Build a prompt for the LLM to recommend feature engineering strategies."""
+        target_context = f"Target variable for prediction: {target_variable}" if target_variable else "No specific target variable provided"
 
-    The agent:
-        1. Reads and prepares file content
-        2. Builds a verification prompt based on file type
-        3. Queries the LLM to assess the current organization
-        4. Returns a verdict (valid/invalid) with recommendations
-    """
-
-    def _build_verification_prompt(self, filename: str, sample: str, mimetype: str) -> str:
-        """
-        Build a prompt for the LLM to verify file organization.
-
-        Creates different prompts for CSV vs. text files. CSV prompts check if
-        column-based sorting is optimal, while text prompts check line-based
-        organization.
-
-        Args:
-            filename (str): Name of the file being verified
-            sample (str): Sample content from the file (first few lines/rows)
-            mimetype (str): MIME type of the file
-
-        Returns:
-            str: Formatted prompt for the LLM
-        """
-        if mimetype == "text/csv" or filename.lower().endswith(".csv"):
-            return (
-                "You are a data quality expert. The following CSV file is already organized in some order. "
-                "Review the organization and determine whether it is the best way to sort the data. "
-                "If it is not, recommend a better sort order and explain why. "
-                "Return JSON with fields: valid (true/false), recommendation, why, and suggested_sort_keys. "
-                f"CSV sample:\n{sample}"
-            )
         return (
-            "You are a data quality expert. The following text file contains data organized in a current order. "
-            "Review whether the chosen organization is the best for clarity or analysis. "
-            "If not, recommend a better organization and explain why. "
-            "Return JSON with fields: valid (true/false), recommendation, why, and suggested_sort_method. "
-            f"Text sample:\n{sample}"
+            f"You are a feature engineering expert. Analyze the following data and recommend "
+            f"feature engineering strategies for machine learning.\n\n"
+            f"Filename: {filename}\n"
+            f"{target_context}\n"
+            f"Data structure: {json.dumps(structure_info, indent=2)}\n\n"
+            f"Sample data:\n{sample}\n\n"
+            "Provide your analysis as JSON with the following fields:\n"
+            "- recommended_features (list): Features to create or use\n"
+            "- feature_transformations (dict): Suggested transformations per feature\n"
+            "- feature_importance (dict): Estimated importance of each feature (1-10)\n"
+            "- feature_interactions (list): Potential interaction features to create\n"
+            "- encoding_strategies (dict): Recommended encoding for categorical features\n"
+            "- scaling_recommendations (dict): Scaling approaches for numerical features\n"
+            "- feature_quality_issues (list): Problems with existing features\n"
+            "- dimensionality_reduction (str): Suggestions if dimensionality reduction is needed\n"
+            "Return ONLY valid JSON, no other text."
         )
 
-    def verify_organization(self, path: str, model: Optional[str] = None, provider: Optional[str] = None) -> dict:
-        """
-        Verify if a file's organization is optimal using LLM assessment.
-
-        Reads the specified file, detects its type, generates a sample, queries
-        the LLM to evaluate the current organization, and returns a verdict
-        with recommendations for improvement if needed.
-
-        Args:
-            path (str): Path to the file to verify
-            model (Optional[str]): Specific LLM model to use (overrides default)
-            provider (Optional[str]): LLM provider to use (defaults to Azure OpenAI)
-
-        Returns:
-            dict: A dictionary containing:
-                - "meta": File metadata (filename, content_type, size)
-                - "analysis": Raw LLM response text
-                - "verdict": Parsed JSON verdict containing:
-                    - "valid": Boolean indicating if organization is optimal
-                    - "recommendation": Text recommendation
-                    - "why": Explanation of the verdict
-                    - "suggested_sort_keys" or "suggested_sort_method": Improvement suggestions
-                - "raw": Complete LLM API response
-
-        Raises:
-            FileNotFoundError: If the specified file doesn't exist
-        """
+    def engineer_features(
+        self, path: str, target_variable: Optional[str] = None, model: Optional[str] = None, provider: Optional[str] = None
+    ) -> dict:
+        """Analyze data and recommend feature engineering strategies."""
         p = Path(path)
         if not p.exists():
             raise FileNotFoundError(f"File not found: {path}")
 
         content = p.read_bytes()
         mt = self.detect_mimetype(p.name, content)
-        meta = {"filename": p.name, "content_type": mt, "size": len(content)}
         text = self._prepare_text(content, mt)
 
-        sample = "\n".join(text.splitlines()[:50])
-        prompt = self._build_verification_prompt(p.name, sample, mt)
-        llm_resp = self.llm.generate(prompt, model=model, provider=provider)
-        analysis_text = llm_resp.get("text")
-        verdict = self._extract_json(analysis_text) or {}
+        structure_info = self._get_data_structure_info(text, mt, p.name)
+        sample = "\n".join(text.splitlines()[:30])
+
+        prompt = self._build_feature_prompt(p.name, sample, mt, target_variable, structure_info)
+        llm_resp = self.llm.generate(prompt, model=model, provider=provider, max_tokens=2000)
+        analysis_text = llm_resp.get("text", "")
+
+        print(f"[DEBUG] Feature Engineering Response length: {len(analysis_text)}")
+
+        recommendations = self._extract_json(analysis_text) or {}
+
         return {
-            "meta": meta,
-            "analysis": analysis_text,
-            "verdict": verdict,
-            "raw": llm_resp.get("raw", llm_resp),
+            "meta": {"filename": p.name, "content_type": mt, "size": len(content), "target_variable": target_variable},
+            "structure": structure_info,
+            "recommendations": recommendations,
+            "raw_response": llm_resp,
         }
+
+
+class CompSciModelingExpertAgent(Agent):
+    """Agent that recommends ML models AND generates executable code."""
+
+    def _build_modeling_prompt(
+        self,
+        filename: str,
+        sample: str,
+        mimetype: str,
+        problem_type: Optional[str],
+        target_variable: Optional[str],
+        constraints: Optional[Dict[str, Any]],
+        structure_info: Dict[str, Any],
+    ) -> str:
+        """Build a prompt for the LLM to recommend ML models and generate code."""
+        problem_context = f"Problem type: {problem_type}" if problem_type else "Problem type not specified - infer from data"
+        target_context = (
+            f"Target variable: {target_variable}"
+            if target_variable
+            else "No target variable specified - infer what would be interesting to predict"
+        )
+        constraints_context = f"Constraints: {json.dumps(constraints)}" if constraints else "No specific constraints provided"
+
+        return (
+            f"You are a machine learning expert who writes production-ready code. Analyze the following data "
+            f"and provide both model recommendations AND executable Python code.\n\n"
+            f"Filename: {filename}\n"
+            f"{problem_context}\n"
+            f"{target_context}\n"
+            f"{constraints_context}\n"
+            f"Data structure: {json.dumps(structure_info, indent=2)}\n\n"
+            f"Sample data:\n{sample}\n\n"
+            "IMPORTANT: Even if no target variable is specified, identify the most interesting column to predict "
+            "or suggest unsupervised learning approaches.\n\n"
+            "Provide your response as JSON with the following fields:\n"
+            "- inferred_problem_type (str): What problem type you're solving\n"
+            "- inferred_target (str): What target variable you're predicting (if any)\n"
+            "- recommended_models (list): Top 3-5 models with justification\n"
+            "- model_comparison (dict): Compare models on accuracy, speed, interpretability\n"
+            "- evaluation_metrics (list): Appropriate metrics for this problem\n"
+            "- training_strategy (str): Suggested training approach\n"
+            "- validation_method (str): Recommended validation strategy\n"
+            "- python_code (str): Complete, runnable Python code that:\n"
+            "    * Loads and preprocesses the data\n"
+            "    * Performs exploratory data analysis\n"
+            "    * Performs feature engineering based on recommendations\n"
+            "    * Trains the best model(s)\n"
+            "    * Evaluates performance with appropriate metrics\n"
+            "    * Saves the trained model\n"
+            "    * Includes example predictions\n"
+            "    * Has proper error handling and comments\n"
+            "- potential_challenges (list): Known challenges with this data/modeling\n"
+            "- optimization_tips (list): Hyperparameter tuning suggestions\n"
+            "- deployment_considerations (list): Factors for production deployment\n"
+            "Return ONLY valid JSON, no other text."
+        )
+
+    def recommend_models_and_generate_code(
+        self,
+        path: str,
+        problem_type: Optional[str] = None,
+        target_variable: Optional[str] = None,
+        constraints: Optional[Dict[str, Any]] = None,
+        model: Optional[str] = None,
+        provider: Optional[str] = None,
+    ) -> dict:
+        """Analyze data, recommend ML models, and generate executable code."""
+        p = Path(path)
+        if not p.exists():
+            raise FileNotFoundError(f"File not found: {path}")
+
+        content = p.read_bytes()
+        mt = self.detect_mimetype(p.name, content)
+        text = self._prepare_text(content, mt)
+
+        structure_info = self._get_data_structure_info(text, mt, p.name)
+        sample = "\n".join(text.splitlines()[:30])
+
+        prompt = self._build_modeling_prompt(p.name, sample, mt, problem_type, target_variable, constraints, structure_info)
+
+        # Increase max_tokens for code generation
+        llm_resp = self.llm.generate(prompt, model=model, provider=provider, max_tokens=4000)
+        analysis_text = llm_resp.get("text", "")
+
+        # Debug: print first 500 chars of response
+        print(f"[DEBUG] LLM Response length: {len(analysis_text)}")
+        print(f"[DEBUG] LLM Response preview: {analysis_text[:500]}...")
+
+        recommendations = self._extract_json(analysis_text) or {}
+
+        if not recommendations:
+            print(f"[WARNING] Failed to extract JSON from response. Full response:\n{analysis_text}")
+
+        generated_code = recommendations.get("python_code", "")
+
+        code_file_path = None
+        if generated_code:
+            code_filename = f"{p.stem}_model_code.py"
+            code_file_path = Path.cwd() / "generated_code" / code_filename
+            code_file_path.parent.mkdir(exist_ok=True)
+            code_file_path.write_text(generated_code)
+            print(f"[INFO] Code saved to: {code_file_path}")
+        else:
+            print("[WARNING] No code generated in LLM response")
+
+        return {
+            "meta": {
+                "filename": p.name,
+                "content_type": mt,
+                "size": len(content),
+                "problem_type": problem_type,
+                "target_variable": target_variable,
+                "constraints": constraints,
+            },
+            "structure": structure_info,
+            "inferred_problem_type": recommendations.get("inferred_problem_type"),
+            "inferred_target": recommendations.get("inferred_target"),
+            "recommendations": {
+                "recommended_models": recommendations.get("recommended_models", []),
+                "model_comparison": recommendations.get("model_comparison", {}),
+                "evaluation_metrics": recommendations.get("evaluation_metrics", []),
+                "training_strategy": recommendations.get("training_strategy", ""),
+                "validation_method": recommendations.get("validation_method", ""),
+                "potential_challenges": recommendations.get("potential_challenges", []),
+                "optimization_tips": recommendations.get("optimization_tips", []),
+                "deployment_considerations": recommendations.get("deployment_considerations", []),
+            },
+            "generated_code": generated_code,
+            "code_file_path": str(code_file_path) if code_file_path else None,
+            "raw_response": llm_resp,
+        }
+
+
+class Manager(Agent):
+    """Orchestrates the workflow between specialized agents."""
+
+    def _build_orchestration_prompt(
+        self, filename: str, sample: str, mimetype: str, domain: Optional[str], task: str, structure_info: Dict[str, Any]
+    ) -> str:
+        """Build a prompt for the LLM to orchestrate agent execution."""
+        return (
+            f"You are an AI workflow orchestrator. Determine which specialized agents should be "
+            f"executed for the following data processing task.\n\n"
+            f"Filename: {filename}\n"
+            f"Task: {task}\n"
+            f"Domain: {domain if domain else 'Not specified - you can still run analysis without domain'}\n"
+            f"Data structure: {json.dumps(structure_info, indent=2)}\n\n"
+            f"Sample data:\n{sample}\n\n"
+            "Available agents:\n"
+            "1. DomainExpertAgent - Provides domain-specific insights (requires domain parameter)\n"
+            "2. FeatureEngineerAgent - Creates and selects features (always useful)\n"
+            "3. CompSciModelingExpertAgent - Recommends ML models AND generates production-ready code (always useful)\n\n"
+            "Decide which agents to run. Return JSON with:\n"
+            "- required_agents (list): Which agents to execute\n"
+            "- execution_order (list): Order of execution\n"
+            "- reasoning (str): Why this orchestration strategy\n"
+            "Return ONLY valid JSON, no other text."
+        )
+
+    def orchestrate_pipeline(
+        self,
+        path: str,
+        task: str,
+        domain: Optional[str] = None,
+        target_variable: Optional[str] = None,
+        problem_type: Optional[str] = None,
+        constraints: Optional[Dict[str, Any]] = None,
+        model: Optional[str] = None,
+        provider: Optional[str] = None,
+    ) -> dict:
+        """Orchestrate the complete data science pipeline across specialized agents."""
+        p = Path(path)
+        if not p.exists():
+            raise FileNotFoundError(f"File not found: {path}")
+
+        content = p.read_bytes()
+        mt = self.detect_mimetype(p.name, content)
+        text = self._prepare_text(content, mt)
+
+        structure_info = self._get_data_structure_info(text, mt, p.name)
+        sample = "\n".join(text.splitlines()[:30])
+
+        # Default to running essential agents
+        required_agents = ["FeatureEngineerAgent", "CompSciModelingExpertAgent"]
+
+        # Only try orchestration if we have domain or it's a complex task
+        if domain or len(task) > 50:
+            try:
+                orchestration_prompt = self._build_orchestration_prompt(p.name, sample, mt, domain, task, structure_info)
+                orchestration_resp = self.llm.generate(orchestration_prompt, model=model, provider=provider)
+                orchestration_text = orchestration_resp.get("text", "")
+                orchestration_plan = self._extract_json(orchestration_text) or {}
+
+                if orchestration_plan.get("required_agents"):
+                    required_agents = orchestration_plan.get("required_agents", required_agents)
+            except Exception:
+                # Fall back to default agents
+                pass
+
+        result: Dict[str, Any] = {"file_path": path, "task": task, "domain_used": domain, "results": {}, "summary": {}}
+
+        # Always run FeatureEngineerAgent
+        feature_agent = FeatureEngineerAgent(self.llm)
+        result["results"]["feature_engineering"] = feature_agent.engineer_features(path, target_variable, model=model, provider=provider)
+        result["summary"]["feature_engineering_complete"] = True
+
+        # Always run CompSciModelingExpertAgent
+        modeling_agent = CompSciModelingExpertAgent(self.llm)
+        modeling_result = modeling_agent.recommend_models_and_generate_code(
+            path, problem_type, target_variable, constraints, model=model, provider=provider
+        )
+        result["results"]["modeling"] = modeling_result
+        result["summary"]["modeling_complete"] = True
+
+        if modeling_result.get("code_file_path"):
+            result["summary"]["code_generated"] = True
+            result["summary"]["code_location"] = modeling_result["code_file_path"]
+        else:
+            result["summary"]["code_generated"] = False
+
+        # Run DomainExpertAgent only if domain is provided
+        if domain:
+            try:
+                domain_agent = DomainExpertAgent(self.llm)
+                result["results"]["domain_analysis"] = domain_agent.analyze_data(path, domain, model=model, provider=provider)
+                result["summary"]["domain_analysis_complete"] = True
+            except Exception as e:
+                result["summary"]["domain_analysis_error"] = str(e)
+
+        result["summary"]["executed_agents"] = len(result["results"])
+
+        return result
