@@ -1,0 +1,21 @@
+customer_id,age,gender,tenure_months,monthly_charge,contract_type,payment_method,tech_support,streaming_tv,churned
+CUST001,45,Male,24,89.50,Month-to-month,Electronic check,No,Yes,Yes
+CUST002,32,Female,36,65.20,One year,Credit card,Yes,Yes,No
+CUST003,28,Male,12,45.80,Month-to-month,Bank transfer,No,No,Yes
+CUST004,51,Female,48,120.30,Two year,Automatic,Yes,Yes,No
+CUST005,37,Male,18,78.90,Month-to-month,Electronic check,No,Yes,Yes
+CUST006,29,Female,60,95.40,One year,Credit card,Yes,Yes,No
+CUST007,64,Male,6,55.20,Month-to-month,Electronic check,No,No,Yes
+CUST008,42,Female,72,110.60,Two year,Automatic,Yes,Yes,No
+CUST009,35,Male,30,70.30,One year,Bank transfer,Yes,No,No
+CUST010,58,Female,15,85.70,Month-to-month,Credit card,No,Yes,Yes
+CUST011,31,Male,42,62.80,One year,Electronic check,Yes,Yes,No
+CUST012,47,Female,24,95.20,Month-to-month,Bank transfer,No,Yes,Yes
+CUST013,52,Male,54,115.40,Two year,Automatic,Yes,Yes,No
+CUST014,26,Female,9,48.90,Month-to-month,Credit card,No,No,Yes
+CUST015,39,Male,38,88.60,One year,Electronic check,Yes,Yes,No
+CUST016,61,Female,14,72.40,Month-to-month,Bank transfer,No,Yes,Yes
+CUST017,44,Male,48,105.70,Two year,Automatic,Yes,Yes,No
+CUST018,33,Female,20,58.30,Month-to-month,Credit card,No,No,Yes
+CUST019,49,Male,62,98.20,One year,Electronic check,Yes,Yes,No
+CUST020,56,Female,28,82.90,Month-to-month,Bank transfer,No,Yes,Yes

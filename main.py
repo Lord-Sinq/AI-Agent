@@ -105,6 +105,8 @@ Examples:
     p.add_argument("--save-responses", action="store_true", help="Save LLM responses to files")
     p.add_argument("--no-save-responses", action="store_true", help="Disable saving LLM responses")
     p.add_argument("--quiet", "-q", action="store_true", help="Suppress interactive prompts (use defaults)")
+    p.add_argument("--no-openml", action="store_true", help="Disable OpenML recommendations")
+    p.add_argument("--download-similar", action="store_true", help="Download similar datasets from OpenML")
     return p
 
 
@@ -189,6 +191,7 @@ def main():
             target_variable=args.target_variable,
             problem_type=args.problem_type,
             model=args.model,
+            use_openml_recommendations=not args.no_openml,  # Use OpenML unless disabled
         )
 
         print("\n✅ Pipeline completed!")

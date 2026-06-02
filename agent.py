@@ -10,6 +10,7 @@ import io
 import json
 import mimetypes
 from typing import Any, Dict, List, Optional, Union
+from openMLAgent import OpenMLAgent
 from pathlib import Path
 from llms import LLMManager
 
@@ -251,9 +252,20 @@ class FeatureEngineerAgent(Agent):
     """Agent that creates and selects features for machine learning models."""
 
     def _build_feature_prompt(
-        self, filename: str, sample: str, mimetype: str, target_variable: Optional[str], structure_info: Dict[str, Any]
+        self,
+        filename: str,
+        sample: str,
+        mimetype: str,
+        target_variable: Optional[str],
+        structure_info: Dict[str, Any],
+        openml_suggestions: Optional[List[Dict]] = None,
     ) -> str:
-        """Build a prompt for the LLM to recommend feature engineering strategies."""
+        """Build a prompt with optional OpenML suggestions."""
+
+        openml_context = ""
+        if openml_suggestions:
+            openml_context = f"\n\nOpenML best practices for similar datasets suggest these preprocessing steps:\n{json.dumps(openml_suggestions, indent=2)}\n"
+
         target_context = f"Target variable for prediction: {target_variable}" if target_variable else "No specific target variable provided"
 
         return (
@@ -261,7 +273,8 @@ class FeatureEngineerAgent(Agent):
             f"feature engineering strategies for machine learning.\n\n"
             f"Filename: {filename}\n"
             f"{target_context}\n"
-            f"Data structure: {json.dumps(structure_info, indent=2)}\n\n"
+            f"Data structure: {json.dumps(structure_info, indent=2)}\n"
+            f"{openml_context}"
             f"Sample data:\n{sample}\n\n"
             "Provide your analysis as JSON with the following fields:\n"
             "- recommended_features (list): Features to create or use\n"
@@ -441,28 +454,10 @@ class CompSciModelingExpertAgent(Agent):
 class Manager(Agent):
     """Orchestrates the workflow between specialized agents."""
 
-    def _build_orchestration_prompt(
-        self, filename: str, sample: str, mimetype: str, domain: Optional[str], task: str, structure_info: Dict[str, Any]
-    ) -> str:
-        """Build a prompt for the LLM to orchestrate agent execution."""
-        return (
-            f"You are an AI workflow orchestrator. Determine which specialized agents should be "
-            f"executed for the following data processing task.\n\n"
-            f"Filename: {filename}\n"
-            f"Task: {task}\n"
-            f"Domain: {domain if domain else 'Not specified - you can still run analysis without domain'}\n"
-            f"Data structure: {json.dumps(structure_info, indent=2)}\n\n"
-            f"Sample data:\n{sample}\n\n"
-            "Available agents:\n"
-            "1. DomainExpertAgent - Provides domain-specific insights (requires domain parameter)\n"
-            "2. FeatureEngineerAgent - Creates and selects features (always useful)\n"
-            "3. CompSciModelingExpertAgent - Recommends ML models AND generates production-ready code (always useful)\n\n"
-            "Decide which agents to run. Return JSON with:\n"
-            "- required_agents (list): Which agents to execute\n"
-            "- execution_order (list): Order of execution\n"
-            "- reasoning (str): Why this orchestration strategy\n"
-            "Return ONLY valid JSON, no other text."
-        )
+    def __init__(self, llm_manager: LLMManager):
+        """Initialize Manager with LLM and OpenML."""
+        super().__init__(llm_manager)
+        self.openml_agent = OpenMLAgent()
 
     def orchestrate_pipeline(
         self,
@@ -474,8 +469,9 @@ class Manager(Agent):
         constraints: Optional[Dict[str, Any]] = None,
         model: Optional[str] = None,
         provider: Optional[str] = None,
+        use_openml_recommendations: bool = True,
     ) -> dict:
-        """Orchestrate the complete data science pipeline across specialized agents."""
+        """Orchestrate the complete data science pipeline with OpenML insights."""
         p = Path(path)
         if not p.exists():
             raise FileNotFoundError(f"File not found: {path}")
@@ -487,35 +483,75 @@ class Manager(Agent):
         structure_info = self._get_data_structure_info(text, mt, p.name)
         sample = "\n".join(text.splitlines()[:30])
 
-        # Default to running essential agents
-        required_agents = ["FeatureEngineerAgent", "CompSciModelingExpertAgent"]
-
-        # Only try orchestration if we have domain or it's a complex task
-        if domain or len(task) > 50:
-            try:
-                orchestration_prompt = self._build_orchestration_prompt(p.name, sample, mt, domain, task, structure_info)
-                orchestration_resp = self.llm.generate(orchestration_prompt, model=model, provider=provider)
-                orchestration_text = orchestration_resp.get("text", "")
-                orchestration_plan = self._extract_json(orchestration_text) or {}
-
-                if orchestration_plan.get("required_agents"):
-                    required_agents = orchestration_plan.get("required_agents", required_agents)
-            except Exception:
-                # Fall back to default agents
-                pass
-
         result: Dict[str, Any] = {"file_path": path, "task": task, "domain_used": domain, "results": {}, "summary": {}}
 
-        # Always run FeatureEngineerAgent
+        # Check OpenML for similar datasets and recommendations
+        openml_insights = {}
+        if use_openml_recommendations:
+            print("\n🔍 Checking OpenML for similar datasets and best practices...")
+            print("   (This may take a few seconds. Timeout set to 15 seconds)")
+
+            try:
+                # Set a timeout for the entire OpenML check
+                import signal
+
+                def timeout_handler(signum, frame):
+                    raise TimeoutError("OpenML check timed out")
+
+                # Set timeout for OpenML operations (optional, if you want to limit total time)
+                # signal.signal(signal.SIGALRM, timeout_handler)
+                # signal.alarm(20)  # 20 second timeout for entire OpenML check
+
+                try:
+                    openml_insights = self.openml_agent.get_best_practices(structure_info, domain)
+
+                    if openml_insights.get("similar_datasets"):
+                        print(f"  ✅ Found {len(openml_insights['similar_datasets'])} similar datasets on OpenML")
+                        result["openml_insights"] = openml_insights
+                    else:
+                        print("  ℹ️ No similar datasets found on OpenML (continuing without OpenML insights)")
+                finally:
+                    pass  # signal.alarm(0)  # Disable alarm
+
+            except TimeoutError:
+                print("  ⏱️ OpenML check timed out (continuing without OpenML insights)")
+                openml_insights = {"error": "timeout", "openml_available": False}
+            except Exception as e:
+                print(f"  ⚠️ OpenML check failed: {e}")
+                print("  Continuing without OpenML insights...")
+                openml_insights = {"error": str(e), "openml_available": False}
+
+        # Run FeatureEngineerAgent with OpenML insights
         feature_agent = FeatureEngineerAgent(self.llm)
-        result["results"]["feature_engineering"] = feature_agent.engineer_features(path, target_variable, model=model, provider=provider)
+        feature_result = feature_agent.engineer_features(path, target_variable, model=model, provider=provider)
+
+        # Enhance feature recommendations with OpenML insights
+        if openml_insights.get("common_preprocessing_steps"):
+            openml_preprocessing = openml_insights["common_preprocessing_steps"]
+            if openml_preprocessing:
+                feature_result["openml_preprocessing_recommendations"] = openml_preprocessing
+
+        result["results"]["feature_engineering"] = feature_result
         result["summary"]["feature_engineering_complete"] = True
 
-        # Always run CompSciModelingExpertAgent
+        # Run modeling agent with OpenML recommendations
         modeling_agent = CompSciModelingExpertAgent(self.llm)
+
+        # Enhance constraints with OpenML insights
+        enhanced_constraints = constraints or {}
+        if openml_insights.get("recommended_models"):
+            enhanced_constraints["openml_models"] = openml_insights["recommended_models"]
+        if openml_insights.get("common_preprocessing_steps"):
+            enhanced_constraints["openml_preprocessing"] = openml_insights["common_preprocessing_steps"]
+
         modeling_result = modeling_agent.recommend_models_and_generate_code(
-            path, problem_type, target_variable, constraints, model=model, provider=provider
+            path, problem_type, target_variable, enhanced_constraints, model=model, provider=provider
         )
+
+        # Add OpenML model recommendations if available
+        if openml_insights.get("recommended_models"):
+            modeling_result["openml_model_recommendations"] = openml_insights["recommended_models"]
+
         result["results"]["modeling"] = modeling_result
         result["summary"]["modeling_complete"] = True
 
@@ -535,5 +571,10 @@ class Manager(Agent):
                 result["summary"]["domain_analysis_error"] = str(e)
 
         result["summary"]["executed_agents"] = len(result["results"])
+
+        # Add OpenML summary
+        if openml_insights and not openml_insights.get("error"):
+            result["summary"]["openml_similar_datasets"] = len(openml_insights.get("similar_datasets", []))
+            result["summary"]["openml_models_recommended"] = len(openml_insights.get("recommended_models", []))
 
         return result

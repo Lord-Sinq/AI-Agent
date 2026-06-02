@@ -1,0 +1,21 @@
+date,city,temperature_c,humidity,precipitation_mm,wind_speed,cloud_cover,air_quality
+2024-01-01,New York,-2,78,15,15,90,Moderate
+2024-01-01,London,5,85,20,20,95,Poor
+2024-01-01,Tokyo,8,65,0,10,40,Good
+2024-01-02,New York,0,75,5,12,70,Moderate
+2024-01-02,London,6,82,12,18,85,Poor
+2024-01-02,Tokyo,9,60,0,8,30,Good
+2024-01-03,New York,1,70,2,10,60,Good
+2024-01-03,London,4,88,25,22,95,Poor
+2024-01-03,Tokyo,10,55,0,5,20,Good
+2024-01-04,New York,3,72,0,8,40,Good
+2024-01-04,London,7,80,8,15,70,Moderate
+2024-01-04,Tokyo,12,50,0,12,25,Good
+2024-01-05,New York,5,68,0,5,30,Good
+2024-01-05,London,8,75,5,10,50,Moderate
+2024-01-05,Tokyo,11,48,0,8,20,Good
+2024-01-06,New York,-1,80,8,18,80,Moderate
+2024-01-06,London,3,90,30,25,100,Poor
+2024-01-06,Tokyo,7,58,5,15,45,Good
+2024-01-07,New York,-3,85,12,20,95,Moderate
+2024-01-07,London,2,87,18,22,90,Poor
