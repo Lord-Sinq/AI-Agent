@@ -129,7 +129,7 @@ VS Code will prompt you to install recommended extensions (Python, Pylance, etc.
 
 AI-Agent/ \
 ├── data/ \
-│ ├── employees.csv
+│ ├── employees.csv \
 │ └── random.txt \
 ├── main.py \
 ├── llms.py \
@@ -138,7 +138,7 @@ AI-Agent/ \
 ├── Dockerfile \
 ├── docker-compose.yml \
 ├── .env.example \
-└── README.md \
+└── README.md 
 
 ## Adding Your Own Data Files
 
