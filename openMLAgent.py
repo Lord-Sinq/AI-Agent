@@ -1,19 +1,23 @@
 """
-OpenML Agent Module with Improved Error Handling
+OpenML Agent Module with API Key Authentication
 """
 
 import json
 import requests
 import time
+import os
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 class OpenMLAgent:
     """
     Agent that queries OpenML for dataset insights and best practices.
-    Includes retry logic and better timeout handling.
+    Uses API key for authenticated access.
     """
 
     def __init__(self, cache_dir: str = "openml_cache", datasets_dir: str = "openMLdatasets"):
@@ -30,10 +34,19 @@ class OpenMLAgent:
         self.cache_dir.mkdir(exist_ok=True)
         self.datasets_dir.mkdir(exist_ok=True)
 
-        # Configuration
-        self.timeout = 15  # Reduced timeout to avoid long hangs
-        self.max_retries = 2
+        # Load OpenML API key from environment
+        self.api_key = os.getenv("OPENML_API_KEY", "")
+        self.timeout = int(os.getenv("OPENML_TIMEOUT", "30"))
+        self.max_retries = int(os.getenv("OPENML_MAX_RETRIES", "3"))
         self.retry_delay = 2  # seconds
+
+        # Print status
+        if self.api_key:
+            print(f"[INFO] OpenML API key configured: {self.api_key[:8]}...")
+        else:
+            print("[INFO] No OpenML API key found. Public access only (rate limited).")
+
+        print(f"[INFO] OpenML timeout: {self.timeout}s, max retries: {self.max_retries}")
 
         # Load download history
         self.download_history_file = self.cache_dir / "download_history.json"
@@ -56,7 +69,7 @@ class OpenMLAgent:
 
     def _make_request(self, endpoint: str, params: Optional[Dict] = None, max_retries: int = None) -> dict:
         """
-        Make a request to the OpenML API with caching and retry logic.
+        Make a request to the OpenML API with caching, retry logic, and API key.
 
         Args:
             endpoint (str): API endpoint
@@ -68,8 +81,17 @@ class OpenMLAgent:
         """
         max_retries = max_retries or self.max_retries
 
-        # Create cache key
-        cache_key = f"{endpoint}_{json.dumps(params or {}, sort_keys=True)}"
+        # Initialize params if None
+        if params is None:
+            params = {}
+
+        # Add API key if available
+        if self.api_key:
+            params["api_key"] = self.api_key
+
+        # Create cache key (without API key for cache)
+        cache_params = {k: v for k, v in params.items() if k != "api_key"}
+        cache_key = f"{endpoint}_{json.dumps(cache_params, sort_keys=True)}"
         cache_key = cache_key.replace("/", "_").replace("?", "_")
         cache_file = self.cache_dir / f"{cache_key}.json"
 
@@ -92,6 +114,16 @@ class OpenMLAgent:
                 response = requests.get(url, params=params, timeout=self.timeout)
                 response.raise_for_status()
                 data = response.json()
+
+                # Check for OpenML API errors
+                if "error" in data:
+                    error_msg = data.get("error", {}).get("message", "Unknown error")
+                    print(f"  ⚠️ OpenML API error: {error_msg}")
+                    if attempt < max_retries - 1:
+                        time.sleep(self.retry_delay)
+                        continue
+                    else:
+                        return {}
 
                 # Cache response
                 with open(cache_file, "w") as f:
@@ -238,12 +270,16 @@ class OpenMLAgent:
             print(f"  ✅ Dataset file already exists: {filename}")
             return target_path
 
-        # Download the dataset
+        # Download the dataset with API key
         download_url = f"https://www.openml.org/data/v1/download/{file_id}"
+
+        # Add API key to download URL if available
+        if self.api_key:
+            download_url += f"?api_key={self.api_key}"
 
         try:
             print(f"  📥 Downloading dataset {dataset_id} ({dataset_name})...")
-            response = requests.get(download_url, timeout=30)
+            response = requests.get(download_url, timeout=60)
             response.raise_for_status()
 
             # Save the file
@@ -281,6 +317,7 @@ class OpenMLAgent:
             "evaluation_metrics": [],
             "common_issues": [],
             "openml_available": len(similar_datasets) > 0,
+            "has_api_key": bool(self.api_key),
         }
 
         # If no similar datasets found, return early
@@ -346,7 +383,6 @@ class OpenMLAgent:
             return []
 
         suggestions = []
-        data_types = structure_info.get("data_types", {})
 
         # Add suggestions from similar datasets
         for step in best_practices.get("common_preprocessing_steps", [])[:3]:
@@ -376,3 +412,24 @@ class OpenMLAgent:
             )
 
         return models
+
+    def test_connection(self) -> bool:
+        """
+        Test the OpenML API connection.
+
+        Returns:
+            bool: True if connection successful, False otherwise
+        """
+        print("\n🔌 Testing OpenML API connection...")
+        response = self._make_request("data/list", {"limit": 1}, max_retries=1)
+
+        if response and "data" in response:
+            print("  ✅ OpenML API connection successful!")
+            if self.api_key:
+                print("  ✅ Using authenticated access with API key")
+            else:
+                print("  ⚠️ Using public access (rate limited). Consider adding OPENML_API_KEY to .env")
+            return True
+        else:
+            print("  ❌ OpenML API connection failed")
+            return False
