@@ -127,18 +127,18 @@ VS Code will prompt you to install recommended extensions (Python, Pylance, etc.
 
 ## Project Structure
 
-AI-Agent/
-├── data/
-│ ├── employees.csv
-│ └── random.txt
-├── main.py
-├── llms.py
-├── agent.py
-├── requirements.txt
-├── Dockerfile
-├── docker-compose.yml
-├── .env.example
-└── README.md
+AI-Agent/ \
+├── data/ \
+│ ├── employees.csv \
+│ └── random.txt \
+├── main.py \
+├── llms.py \
+├── agent.py \
+├── requirements.txt \
+├── Dockerfile \
+├── docker-compose.yml \
+├── .env.example \
+└── README.md 
 
 ## Adding Your Own Data Files
 
