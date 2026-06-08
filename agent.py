@@ -225,8 +225,8 @@ class ModelingAgent(Agent):
     """Modeling agent with improved code extraction and cutoff handling."""
 
     def generate(self, path: str, feature_info: Optional[dict] = None,
-                 problem_type: Optional[str] = None, target: Optional[str] = None,
-                 model: Optional[str] = None) -> dict:
+             problem_type: Optional[str] = None, target: Optional[str] = None,
+             model: Optional[str] = None) -> dict:
         content, mt, text, structure = self._read_file(path)
 
         headers = structure.get('headers', [])
@@ -256,8 +256,8 @@ class ModelingAgent(Agent):
 
             YOUR JSON:"""
 
-        # Increased max_tokens to 10000 to prevent cutoff
-        resp = self.llm.generate(prompt, model=model, max_tokens=10000)
+        # Use 6000 tokens to avoid timeout
+        resp = self.llm.generate(prompt, model=model, max_tokens=6000)
         response_text = resp.get("text", "")
 
         # Extract JSON
@@ -271,20 +271,23 @@ class ModelingAgent(Agent):
         if not result:
             result = self._find_json_in_response(response_text)
 
-        # Extract code from result
-        code = result.get("code", "") if result else ""
+        # Extract code from result (handle None case)
+        code = None
+        if result:
+            code = result.get("code")
 
         # If code is still empty, try direct extraction
-        if not code or len(code) < 50:
+        if not code or (isinstance(code, str) and len(code) < 50):
             code = self._extract_code_block(response_text)
 
-        # Fix cutoff issues in code
-        if code:
+        # Fix cutoff issues in code (only if code is not None)
+        if code and isinstance(code, str):
             code = self._clean_code(code)
 
         # Save code if valid
         code_path = None
-        if code and len(code) > 100:
+        if code and isinstance(code, str) and len(code) > 100:
+            # Unescape the code
             code = code.replace('\\n', '\n').replace('\\t', '\t').replace('\\"', '"')
 
             code_filename = f"{Path(path).stem}_model.py"
@@ -294,7 +297,8 @@ class ModelingAgent(Agent):
             print(f"[INFO] ✓ Code saved to {code_path}")
             print(f"[INFO] Code lines: {len(code.split(chr(10)))}")
         else:
-            print(f"[WARNING] No valid code generated (length: {len(code)})")
+            code_length = len(code) if code and isinstance(code, str) else 0
+            print(f"[WARNING] No valid code generated (length: {code_length})")
 
         return {
             "problem_type": result.get("problem") if result else None,
@@ -302,7 +306,7 @@ class ModelingAgent(Agent):
             "recommended_models": result.get("models", ["RandomForest"]) if result else ["RandomForest"],
             "code_generated": bool(code_path),
             "code_path": str(code_path) if code_path else None,
-            "code_preview": code[:400] + "..." if code and len(code) > 400 else code
+            "code_preview": (code[:400] + "...") if code and isinstance(code, str) and len(code) > 400 else code
         }
 
     def _extract_code_from_response(self, text: str) -> dict:
@@ -342,6 +346,9 @@ class ModelingAgent(Agent):
 
     def _extract_code_block(self, text: str) -> Optional[str]:
         """Extract Python code block from response text."""
+        if not text:
+            return None
+
         import re
 
         patterns = [
@@ -360,14 +367,17 @@ class ModelingAgent(Agent):
         # Look for code starting with import
         match = re.search(r'(import pandas.*?)(?=\n\n[^#\s]|\Z)', text, re.DOTALL)
         if match:
-            return match.group(1).strip()
+            code = match.group(1).strip()
+            if code:
+                return code
 
-        return None
+        # Return empty string instead of None to avoid len() errors
+        return ""
 
     def _clean_code(self, code: str) -> str:
         """Clean and fix cutoff issues in code."""
-        if not code:
-            return code
+        if not code or not isinstance(code, str):
+            return ""
 
         # Remove thinking text before code
         import re
