@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 from pathlib import Path
 from llms import LLMManager
 from openMLAgentLocal import OpenMLAgent
+from caafeValidator import CAAFEFeatureValidator, extract_code_from_response
 
 
 class Agent:
@@ -103,13 +104,11 @@ class Agent:
 
         # Remove think tags and everything before them
         if '<think>' in text:
-            # Remove everything before and including </think>
             think_end = text.find('</think>')
             if think_end != -1:
-                text = text[think_end + 8:]  # +8 for </think>
+                text = text[think_end + 8:]
 
         # Look for JSON after the thinking section
-        # Find the first { or [ that starts a JSON object
         lines = text.split('\n')
         json_lines = []
         in_json = False
@@ -117,10 +116,8 @@ class Agent:
 
         for line in lines:
             if not in_json:
-                # Look for start of JSON
                 if '{' in line or '[' in line:
                     in_json = True
-                    # Find where JSON starts in this line
                     start_idx = min(
                         line.find('{') if '{' in line else len(line),
                         line.find('[') if '[' in line else len(line)
@@ -136,8 +133,6 @@ class Agent:
 
         if json_lines:
             json_str = '\n'.join(json_lines)
-
-            # Clean up the JSON string
             json_str = re.sub(r',\s*}', '}', json_str)
             json_str = re.sub(r',\s*\]', ']', json_str)
             json_str = re.sub(r'```json\s*|```\s*', '', json_str)
@@ -146,7 +141,6 @@ class Agent:
                 return json.loads(json_str)
             except json.JSONDecodeError as e:
                 print(f"[WARNING] JSON parse error: {e}")
-                # Try to fix common issues
                 json_str = re.sub(r'([^\\])\\([^"\\/bfnrtu])', r'\1\\\\\2', json_str)
                 try:
                     return json.loads(json_str)
@@ -154,24 +148,6 @@ class Agent:
                     pass
 
         return None
-
-    @staticmethod
-    def _try_fix_json(json_str: str) -> Optional[Dict]:
-        """Try to fix common JSON issues."""
-        # Remove trailing commas
-        json_str = re.sub(r',\s*}', '}', json_str)
-        json_str = re.sub(r',\s*\]', ']', json_str)
-
-        # Add missing closing braces
-        open_braces = json_str.count('{')
-        close_braces = json_str.count('}')
-        if open_braces > close_braces:
-            json_str += '}' * (open_braces - close_braces)
-
-        try:
-            return json.loads(json_str)
-        except:
-            return None
 
 
 class DomainExpertAgent(Agent):
@@ -207,7 +183,6 @@ class FeatureEngineerAgent(Agent):
     def analyze(self, path: str, target: Optional[str] = None, model: Optional[str] = None) -> dict:
         content, mt, text, structure = self._read_file(path)
 
-        # Get minimal structure info
         headers = structure.get('headers', [])
         data_types = structure.get('data_types', {})
         rows = structure.get('rows', 0)
@@ -224,7 +199,6 @@ class FeatureEngineerAgent(Agent):
         resp = self.llm.generate(prompt, model=model, max_tokens=800)
         recommendations = self._extract_json(resp.get("text", ""))
 
-        # Fallback if extraction fails
         if not recommendations:
             recommendations = self._default_features(headers, data_types)
 
@@ -236,7 +210,6 @@ class FeatureEngineerAgent(Agent):
         }
 
     def _default_features(self, headers: List[str], data_types: Dict[str, str]) -> dict:
-        """Rule-based fallback."""
         numeric = [h for h in headers if data_types.get(h) in ['numeric', 'float']]
         categorical = [h for h in headers if data_types.get(h) == 'categorical']
 
@@ -249,6 +222,8 @@ class FeatureEngineerAgent(Agent):
 
 
 class ModelingAgent(Agent):
+    """Modeling agent with improved code extraction and cutoff handling."""
+
     def generate(self, path: str, feature_info: Optional[dict] = None,
                  problem_type: Optional[str] = None, target: Optional[str] = None,
                  model: Optional[str] = None) -> dict:
@@ -266,67 +241,58 @@ class ModelingAgent(Agent):
             drop = feature_info.get('drop', [])[:3]
             feature_context = f"\nFEATURES: {features}\nSCALE: {scale}\nENCODE: {encode}\nDROP: {drop}"
 
-        # Get sample
-        sample_lines = text.splitlines()[:4]
+        # Get sample - limited to save tokens
+        sample_lines = text.splitlines()[:3]
         sample = "\n".join(sample_lines) if len(sample_lines) > 1 else ""
 
         prompt = f"""{Path(path).name} | {rows} rows | {len(headers)} cols
             Target: {target or 'auto'}{feature_context}
 
             SAMPLE:
-            {sample[:400]}
+            {sample[:300]}
 
             STRICT JSON OUTPUT - NO TEXT, NO EXPLANATION:
             {{"problem":"classification|regression","target":"col_name","models":["model1"],"code":"PYTHON CODE HERE"}}
 
             YOUR JSON:"""
 
-        resp = self.llm.generate(prompt, model=model, max_tokens=3500)
+        # Increased max_tokens to 10000 to prevent cutoff
+        resp = self.llm.generate(prompt, model=model, max_tokens=10000)
         response_text = resp.get("text", "")
 
-        # Debug: Save raw response for inspection
-        # if hasattr(self.llm, 'save_responses') and self.llm.save_responses:
-        #     debug_path = Path.cwd() / "debug_response.txt"
-        #     debug_path.write_text(response_text)
-        #     print(f"[DEBUG] Raw response saved to {debug_path}")
-
-        # Extract JSON using improved method
+        # Extract JSON
         result = self._extract_json(response_text)
 
-        # If extraction failed, try to find code block directly
+        # Fallback: extract code block directly
         if not result and 'import pandas' in response_text:
-            print("[INFO] JSON extraction failed but found code block - extracting code directly")
+            print("[INFO] JSON extraction failed, extracting code directly")
             result = self._extract_code_from_response(response_text)
 
-        # If still no result, try to find any JSON-like structure
         if not result:
             result = self._find_json_in_response(response_text)
 
-        # Validate and fix common issues
-        if result and not result.get("code"):
-            print("[WARNING] No code in extracted JSON, looking for code block")
-            code = self._extract_code_block(response_text)
-            if code:
-                result["code"] = code
-
-        # Save code if generated
+        # Extract code from result
         code = result.get("code", "") if result else ""
-        code_path = None
 
+        # If code is still empty, try direct extraction
+        if not code or len(code) < 50:
+            code = self._extract_code_block(response_text)
+
+        # Fix cutoff issues in code
+        if code:
+            code = self._clean_code(code)
+
+        # Save code if valid
+        code_path = None
         if code and len(code) > 100:
-            # Unescape the code string - convert literal \n to actual newlines
-            code = code.replace('\\n', '\n')
-            code = code.replace('\\t', '\t')
-            code = code.replace('\\"', '"')
-            code = code.replace("\\'", "'")
+            code = code.replace('\\n', '\n').replace('\\t', '\t').replace('\\"', '"')
 
             code_filename = f"{Path(path).stem}_model.py"
             code_path = Path.cwd() / "generated_code" / code_filename
             code_path.parent.mkdir(exist_ok=True)
             code_path.write_text(code)
             print(f"[INFO] ✓ Code saved to {code_path}")
-            print(f"[INFO] Code length: {len(code)} characters")
-            print(f"[INFO] First line: {code.split(chr(10))[0] if chr(10) in code else code[:50]}")
+            print(f"[INFO] Code lines: {len(code.split(chr(10)))}")
         else:
             print(f"[WARNING] No valid code generated (length: {len(code)})")
 
@@ -343,19 +309,17 @@ class ModelingAgent(Agent):
         """Extract code directly from response when JSON parsing fails."""
         import re
 
-        # Look for code block
         code_match = re.search(r'```python\n(.*?)```', text, re.DOTALL)
         if not code_match:
             code_match = re.search(r'```\n(.*?)```', text, re.DOTALL)
         if not code_match:
-            # Look for code starting with import
             code_match = re.search(r'(import pandas.*?)(?=\n\n|\Z)', text, re.DOTALL)
 
         if code_match:
             code = code_match.group(1).strip()
             return {
                 "problem": "classification",
-                "target": "churned",
+                "target": "target",
                 "models": ["RandomForest"],
                 "code": code
             }
@@ -365,7 +329,6 @@ class ModelingAgent(Agent):
         """Find any JSON-like structure in the response."""
         import re
 
-        # Find anything that looks like a JSON object
         json_pattern = r'\{[^{}]*"problem"[^{}]*"code"[^{}]*\}'
         matches = re.findall(json_pattern, text, re.DOTALL)
 
@@ -381,57 +344,57 @@ class ModelingAgent(Agent):
         """Extract Python code block from response text."""
         import re
 
-        # Look for markdown code blocks
         patterns = [
             r'```python\n(.*?)```',
             r'```\n(.*?)```',
             r'```python(.*?)```',
-            r'`{3}python\n(.*?)`{3}',
         ]
 
         for pattern in patterns:
             match = re.search(pattern, text, re.DOTALL)
             if match:
                 code = match.group(1).strip()
-                if code and ('import' in code or 'def ' in code or 'class ' in code):
+                if code and ('import' in code or 'def ' in code):
                     return code
 
-        # If no markdown block, look for code starting with import or def
-        lines = text.split('\n')
-        code_lines = []
-        in_code = False
-        code_start_indicators = ['import ', 'from ', 'def ', 'class ', '# Load data', '# Define']
-
-        for line in lines:
-            line_stripped = line.strip()
-
-            if not in_code:
-                # Look for start of Python code
-                if any(line_stripped.startswith(indicator) for indicator in code_start_indicators):
-                    in_code = True
-                    code_lines.append(line)
-            else:
-                # Check if we've reached the end of code block
-                # Stop if we find a line that's clearly not code after collecting enough
-                if (line_stripped and
-                    not line_stripped.startswith('import ') and
-                    not line_stripped.startswith('from ') and
-                    not line_stripped.startswith('def ') and
-                    not line_stripped.startswith('class ') and
-                    not line_stripped.startswith('#') and
-                    ' = ' not in line_stripped and
-                    '(' not in line_stripped and
-                    len(code_lines) > 15):
-                    break
-                code_lines.append(line)
-
-        if code_lines:
-            code = '\n'.join(code_lines)
-            code = code.rstrip()
-            if len(code) > 100 and ('import' in code or 'def ' in code):
-                return code
+        # Look for code starting with import
+        match = re.search(r'(import pandas.*?)(?=\n\n[^#\s]|\Z)', text, re.DOTALL)
+        if match:
+            return match.group(1).strip()
 
         return None
+
+    def _clean_code(self, code: str) -> str:
+        """Clean and fix cutoff issues in code."""
+        if not code:
+            return code
+
+        # Remove thinking text before code
+        import re
+        match = re.search(r'(import|from|def|class|#).*', code, re.DOTALL)
+        if match:
+            code = match.group(0)
+
+        # Fix unclosed parentheses
+        lines = code.split('\n')
+        last_line = lines[-1].strip() if lines else ""
+
+        if last_line.count('(') > last_line.count(')'):
+            code += ')'
+        if last_line.count('[') > last_line.count(']'):
+            code += ']'
+        if last_line.count('{') > last_line.count('}'):
+            code += '}'
+
+        # Fix incomplete scaler line
+        if code.strip().endswith('X[scale_cols'):
+            code += '] = scaler.fit_transform(X[scale_cols])'
+
+        # Fix incomplete model line
+        if code.strip().endswith('model = RandomForestClassifier('):
+            code += ')'
+
+        return code
 
 
 class Manager(Agent):
@@ -506,7 +469,7 @@ class Manager(Agent):
             print(f"\n Adding domain context: {domain}")
             result["domain_context"] = {"domain": domain, "note": "Domain expert analysis available if needed"}
 
-        print(f"\n Pipeline complete!")
+        print(f"\n✅ Pipeline complete!")
         if modeling_result.get('code_path'):
             print(f" Ready to run: python {modeling_result['code_path']}")
 
