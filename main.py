@@ -127,29 +127,29 @@ def print_summary(result):
 
     summary = result.get("summary", {})
 
-    if summary.get("features_done"):
-        print("Feature engineering completed")
+    if summary.get("features_count") is not None:
+        print(f"Features selected: {summary.get('features_count', 0)}")
 
-    if summary.get("modeling_done"):
-        modeling = result["results"]["modeling"]
-        print(f"Problem type: {modeling.get('inferred_problem_type', 'unknown')}")
-        print(f"Target: {modeling.get('inferred_target', 'unknown')}")
+    if summary.get("problem_type"):
+        print(f"Problem type: {summary.get('problem_type', 'unknown')}")
 
-        models = modeling.get("recommended_models", [])
-        if models:
-            print(f"Recommended: {', '.join(models[:3])}")
+    if summary.get("target"):
+        print(f"Target variable: {summary.get('target', 'unknown')}")
+
+    models = summary.get("models", [])
+    if models:
+        print(f"Recommended models: {', '.join(models[:3])}")
 
     if summary.get("code_generated"):
-        print(f"Code saved: {result['results']['modeling'].get('code_path', 'unknown')}")
+        # Get code path from pipeline
+        if "pipeline" in result and "modeling" in result["pipeline"]:
+            code_path = result["pipeline"]["modeling"].get("code_path")
+            if code_path:
+                print(f"Code saved: {code_path}")
 
-    if summary.get("domain_done"):
-        print("Domain analysis completed")
-
-    if result.get("openml_similar"):
-        print(f"Found {len(result['openml_similar'])} similar datasets")
-
-    print("=" * 60)
-
+    if result.get("openml_context"):
+        print(f"Found {result['openml_context'].get('similar_count', 0)} similar datasets")
+    print("\n" + "=" * 60)
 
 def main():
     """Main entry point."""
@@ -192,7 +192,6 @@ def main():
 
     try:
         manager = Manager(llm)
-        # FIXED: Changed from orchestrate_pipeline to process
         result = manager.process(
             path=file_path,
             task=args.task,
@@ -209,32 +208,44 @@ def main():
         if not args.quiet:
             print("\nDetailed results:")
             clean_result = {
-                "file": result["file"],
-                "task": result["task"],
-                "modeling": {
-                    "problem": result["results"]["modeling"].get("inferred_problem_type"),
-                    "target": result["results"]["modeling"].get("inferred_target"),
-                    "models": result["results"]["modeling"].get("recommended_models", []),
-                    "code": result["results"]["modeling"].get("code_path")
+                    "file": result.get("file"),
+                    "task": result.get("task"),
+                    "timestamp": result.get("timestamp"),
+                    "features": result["pipeline"].get("features", {}),
+                    "modeling": {
+                        "problem_type": result["pipeline"]["modeling"].get("problem_type"),
+                        "target": result["pipeline"]["modeling"].get("target"),
+                        "models": result["pipeline"]["modeling"].get("recommended_models", []),
+                        "code_generated": result["pipeline"]["modeling"].get("code_generated"),
+                        "code_path": result["pipeline"]["modeling"].get("code_path")
+                    }
                 }
-            }
             print(json.dumps(clean_result, indent=2))
 
-        if result["summary"].get("code_generated"):
-            code = result["results"]["modeling"].get("generated_code", "")
-            if code:
-                print("\n" + "=" * 60)
-                print("CODE PREVIEW (first 800 chars)")
-                print("=" * 60)
-                print(code[:800])
-                if len(code) > 800:
-                    print("\n... (see full file for complete code)")
+        code_generated = False
+        code_preview = ""
 
+        if "pipeline" in result and "modeling" in result["pipeline"]:
+            code_generated = result["pipeline"]["modeling"].get("code_generated", False)
+            code_preview = result["pipeline"]["modeling"].get("code_preview", "")
+        elif "results" in result and "modeling" in result["results"]:
+            code_generated = result["results"]["modeling"].get("code_generated", False)
+            code_preview = result["results"]["modeling"].get("generated_code", "")
+
+        if code_generated and code_preview and not args.quiet:
+            print("\n" + "=" * 60)
+            print("CODE PREVIEW (first 800 chars)")
+            print("=" * 60)
+            print(code_preview[:800])
+            if len(code_preview) > 800:
+                print("\n... (see full file for complete code)")
+
+        # Show response save location
         if os.getenv("SAVE_RESPONSES") == "true" and hasattr(llm, 'responses_dir'):
             print(f"\nResponses saved to: {llm.responses_dir}")
 
     except Exception as e:
-        print(f"\nError: {e}")
+        print(f"\n Error: {e}")
         if not args.quiet:
             import traceback
             traceback.print_exc()

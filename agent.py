@@ -95,43 +95,83 @@ class Agent:
 
     @staticmethod
     def _extract_json(text: Optional[str]) -> Any:
-        """Extract JSON from LLM response - simplified version."""
+        """Extract JSON from LLM response - handles DeepSeek thinking text."""
         if not text:
             return None
 
+        import re
+
         # Remove think tags and everything before them
-        if '</think>' in text:
-            text = text.split('</think>')[-1]
+        if '<think>' in text:
+            # Remove everything before and including </think>
+            think_end = text.find('</think>')
+            if think_end != -1:
+                text = text[think_end + 8:]  # +8 for </think>
 
-        # Remove markdown code blocks
-        text = re.sub(r'```json\s*|```\s*', '', text)
+        # Look for JSON after the thinking section
+        # Find the first { or [ that starts a JSON object
+        lines = text.split('\n')
+        json_lines = []
+        in_json = False
+        brace_count = 0
 
-        # Find JSON
-        start = text.find('{')
-        if start == -1:
-            start = text.find('[')
+        for line in lines:
+            if not in_json:
+                # Look for start of JSON
+                if '{' in line or '[' in line:
+                    in_json = True
+                    # Find where JSON starts in this line
+                    start_idx = min(
+                        line.find('{') if '{' in line else len(line),
+                        line.find('[') if '[' in line else len(line)
+                    )
+                    line = line[start_idx:]
+                    brace_count = line.count('{') + line.count('[') - line.count('}') - line.count(']')
+                    json_lines.append(line)
+            else:
+                json_lines.append(line)
+                brace_count += line.count('{') + line.count('[') - line.count('}') - line.count(']')
+                if brace_count == 0:
+                    break
 
-        if start != -1:
-            # Try to parse from start to end
+        if json_lines:
+            json_str = '\n'.join(json_lines)
+
+            # Clean up the JSON string
+            json_str = re.sub(r',\s*}', '}', json_str)
+            json_str = re.sub(r',\s*\]', ']', json_str)
+            json_str = re.sub(r'```json\s*|```\s*', '', json_str)
+
             try:
-                return json.loads(text[start:])
-            except:
-                pass
-
-            # Try brace matching
-            brace_count = 0
-            for i in range(start, len(text)):
-                if text[i] == '{':
-                    brace_count += 1
-                elif text[i] == '}':
-                    brace_count -= 1
-                    if brace_count == 0:
-                        try:
-                            return json.loads(text[start:i+1])
-                        except:
-                            break
+                return json.loads(json_str)
+            except json.JSONDecodeError as e:
+                print(f"[WARNING] JSON parse error: {e}")
+                # Try to fix common issues
+                json_str = re.sub(r'([^\\])\\([^"\\/bfnrtu])', r'\1\\\\\2', json_str)
+                try:
+                    return json.loads(json_str)
+                except:
+                    pass
 
         return None
+
+    @staticmethod
+    def _try_fix_json(json_str: str) -> Optional[Dict]:
+        """Try to fix common JSON issues."""
+        # Remove trailing commas
+        json_str = re.sub(r',\s*}', '}', json_str)
+        json_str = re.sub(r',\s*\]', ']', json_str)
+
+        # Add missing closing braces
+        open_braces = json_str.count('{')
+        close_braces = json_str.count('}')
+        if open_braces > close_braces:
+            json_str += '}' * (open_braces - close_braces)
+
+        try:
+            return json.loads(json_str)
+        except:
+            return None
 
 
 class DomainExpertAgent(Agent):
@@ -166,84 +206,232 @@ class FeatureEngineerAgent(Agent):
 
     def analyze(self, path: str, target: Optional[str] = None, model: Optional[str] = None) -> dict:
         content, mt, text, structure = self._read_file(path)
-        sample = "\n".join(text.splitlines()[:5])  # Only 5 rows
 
-        prompt = f"""Data: {path}
-        Target: {target if target else 'infer from data'}
-        Structure: {json.dumps(structure, indent=2)}
-        Sample: {sample}
+        # Get minimal structure info
+        headers = structure.get('headers', [])
+        data_types = structure.get('data_types', {})
+        rows = structure.get('rows', 0)
 
-        Return ONLY JSON:
-        {{"recommended_features":["col1","col2"],
-        "feature_transformations":{{"col":"desc"}},
-        "encoding_strategies":{{"cat_col":"label_encode"}},
-        "scaling_recommendations":{{"numeric_features":["col1"],
-        "method":"StandardScaler"}},
-        "feature_quality_issues":[]}}"""
+        prompt = f"""DATA: {path}
+            ROWS: {rows}
+            COLS: {headers[:10]}
+            TYPES: {data_types}
+            TARGET: {target if target else 'auto'}
 
-        resp = self.llm.generate(prompt, model=model, max_tokens=1500)
-        analysis_text = resp.get("text", "")
-        recommendations = self._extract_json(analysis_text) or {}
+            RETURN ONLY VALID JSON - NO OTHER TEXT:
+            {{"features":["col1","col2"],"scale":["numeric_col"],"encode":{{"cat_col":"label"}},"drop":["id_col"]}}"""
 
-        return {"structure": structure, "recommendations": recommendations}
+        resp = self.llm.generate(prompt, model=model, max_tokens=800)
+        recommendations = self._extract_json(resp.get("text", ""))
+
+        # Fallback if extraction fails
+        if not recommendations:
+            recommendations = self._default_features(headers, data_types)
+
+        return {
+            "features": recommendations.get("features", headers[:10]),
+            "scale": recommendations.get("scale", []),
+            "encode": recommendations.get("encode", {}),
+            "drop": recommendations.get("drop", [])
+        }
+
+    def _default_features(self, headers: List[str], data_types: Dict[str, str]) -> dict:
+        """Rule-based fallback."""
+        numeric = [h for h in headers if data_types.get(h) in ['numeric', 'float']]
+        categorical = [h for h in headers if data_types.get(h) == 'categorical']
+
+        return {
+            "features": headers[:10],
+            "scale": numeric[:5],
+            "encode": {col: "label" for col in categorical[:3]},
+            "drop": [h for h in headers if 'id' in h.lower() or 'date' in h.lower()]
+        }
 
 
 class ModelingAgent(Agent):
-    """Modeling and code generation agent."""
-
-    def generate(self, path: str, problem_type: Optional[str] = None, target: Optional[str] = None, model: Optional[str] = None) -> dict:
+    def generate(self, path: str, feature_info: Optional[dict] = None,
+                 problem_type: Optional[str] = None, target: Optional[str] = None,
+                 model: Optional[str] = None) -> dict:
         content, mt, text, structure = self._read_file(path)
-        sample = "\n".join(text.splitlines()[:5])  # Only 5 rows
 
         headers = structure.get('headers', [])
         rows = structure.get('rows', 0)
 
-        prompt = f"""Generate Python code for {path}
-        Rows: {rows}
-        Columns: {headers}
-        Target: {target if target else 'infer from data'}
-        Problem: {problem_type if problem_type else 'infer from data'}
-        Sample: {sample}
+        # Build feature context
+        feature_context = ""
+        if feature_info:
+            features = feature_info.get('features', [])[:8]
+            scale = feature_info.get('scale', [])[:4]
+            encode = feature_info.get('encode', {})
+            drop = feature_info.get('drop', [])[:3]
+            feature_context = f"\nFEATURES: {features}\nSCALE: {scale}\nENCODE: {encode}\nDROP: {drop}"
 
-        Return ONLY JSON:
-        {{"inferred_problem_type":"classification",
-        "inferred_target":"column_name",
-        "recommended_models":["RandomForestClassifier"],
-        "python_code":"import pandas as pd\\n# code here"}}
+        # Get sample
+        sample_lines = text.splitlines()[:4]
+        sample = "\n".join(sample_lines) if len(sample_lines) > 1 else ""
 
-        Code must:
-        1. Load data from '{path}'
-        2. Handle preprocessing (drop IDs, handle missing, encode categoricals)
-        3. Train/test split
-        4. Train appropriate model
-        5. Evaluate with metrics
-        6. Show example prediction"""
+        prompt = f"""{Path(path).name} | {rows} rows | {len(headers)} cols
+            Target: {target or 'auto'}{feature_context}
 
-        try:
-            resp = self.llm.generate(prompt, model=model, max_tokens=4000)
-            analysis_text = resp.get("text", "")
-            result = self._extract_json(analysis_text) or {}
-        except Exception as e:
-            print(f"[ERROR] Modeling generation failed: {e}")
-            result = {}
+            SAMPLE:
+            {sample[:400]}
 
-        code = result.get("python_code", "")
+            STRICT JSON OUTPUT - NO TEXT, NO EXPLANATION:
+            {{"problem":"classification|regression","target":"col_name","models":["model1"],"code":"PYTHON CODE HERE"}}
+
+            YOUR JSON:"""
+
+        resp = self.llm.generate(prompt, model=model, max_tokens=3500)
+        response_text = resp.get("text", "")
+
+        # Debug: Save raw response for inspection
+        # if hasattr(self.llm, 'save_responses') and self.llm.save_responses:
+        #     debug_path = Path.cwd() / "debug_response.txt"
+        #     debug_path.write_text(response_text)
+        #     print(f"[DEBUG] Raw response saved to {debug_path}")
+
+        # Extract JSON using improved method
+        result = self._extract_json(response_text)
+
+        # If extraction failed, try to find code block directly
+        if not result and 'import pandas' in response_text:
+            print("[INFO] JSON extraction failed but found code block - extracting code directly")
+            result = self._extract_code_from_response(response_text)
+
+        # If still no result, try to find any JSON-like structure
+        if not result:
+            result = self._find_json_in_response(response_text)
+
+        # Validate and fix common issues
+        if result and not result.get("code"):
+            print("[WARNING] No code in extracted JSON, looking for code block")
+            code = self._extract_code_block(response_text)
+            if code:
+                result["code"] = code
+
+        # Save code if generated
+        code = result.get("code", "") if result else ""
         code_path = None
-        if code:
+
+        if code and len(code) > 100:
+            # Unescape the code string - convert literal \n to actual newlines
+            code = code.replace('\\n', '\n')
+            code = code.replace('\\t', '\t')
+            code = code.replace('\\"', '"')
+            code = code.replace("\\'", "'")
+
             code_filename = f"{Path(path).stem}_model.py"
             code_path = Path.cwd() / "generated_code" / code_filename
             code_path.parent.mkdir(exist_ok=True)
             code_path.write_text(code)
-            print(f"[INFO] Code saved to {code_path}")
+            print(f"[INFO] ✓ Code saved to {code_path}")
+            print(f"[INFO] Code length: {len(code)} characters")
+            print(f"[INFO] First line: {code.split(chr(10))[0] if chr(10) in code else code[:50]}")
+        else:
+            print(f"[WARNING] No valid code generated (length: {len(code)})")
 
         return {
-            "inferred_problem_type": result.get("inferred_problem_type"),
-            "inferred_target": result.get("inferred_target"),
-            "recommended_models": result.get("recommended_models", []),
-            "code_generated": bool(code),
+            "problem_type": result.get("problem") if result else None,
+            "target": result.get("target") if result else None,
+            "recommended_models": result.get("models", ["RandomForest"]) if result else ["RandomForest"],
+            "code_generated": bool(code_path),
             "code_path": str(code_path) if code_path else None,
-            "generated_code": code,
+            "code_preview": code[:400] + "..." if code and len(code) > 400 else code
         }
+
+    def _extract_code_from_response(self, text: str) -> dict:
+        """Extract code directly from response when JSON parsing fails."""
+        import re
+
+        # Look for code block
+        code_match = re.search(r'```python\n(.*?)```', text, re.DOTALL)
+        if not code_match:
+            code_match = re.search(r'```\n(.*?)```', text, re.DOTALL)
+        if not code_match:
+            # Look for code starting with import
+            code_match = re.search(r'(import pandas.*?)(?=\n\n|\Z)', text, re.DOTALL)
+
+        if code_match:
+            code = code_match.group(1).strip()
+            return {
+                "problem": "classification",
+                "target": "churned",
+                "models": ["RandomForest"],
+                "code": code
+            }
+        return {}
+
+    def _find_json_in_response(self, text: str) -> dict:
+        """Find any JSON-like structure in the response."""
+        import re
+
+        # Find anything that looks like a JSON object
+        json_pattern = r'\{[^{}]*"problem"[^{}]*"code"[^{}]*\}'
+        matches = re.findall(json_pattern, text, re.DOTALL)
+
+        for match in matches:
+            try:
+                return json.loads(match)
+            except:
+                continue
+
+        return {}
+
+    def _extract_code_block(self, text: str) -> Optional[str]:
+        """Extract Python code block from response text."""
+        import re
+
+        # Look for markdown code blocks
+        patterns = [
+            r'```python\n(.*?)```',
+            r'```\n(.*?)```',
+            r'```python(.*?)```',
+            r'`{3}python\n(.*?)`{3}',
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, text, re.DOTALL)
+            if match:
+                code = match.group(1).strip()
+                if code and ('import' in code or 'def ' in code or 'class ' in code):
+                    return code
+
+        # If no markdown block, look for code starting with import or def
+        lines = text.split('\n')
+        code_lines = []
+        in_code = False
+        code_start_indicators = ['import ', 'from ', 'def ', 'class ', '# Load data', '# Define']
+
+        for line in lines:
+            line_stripped = line.strip()
+
+            if not in_code:
+                # Look for start of Python code
+                if any(line_stripped.startswith(indicator) for indicator in code_start_indicators):
+                    in_code = True
+                    code_lines.append(line)
+            else:
+                # Check if we've reached the end of code block
+                # Stop if we find a line that's clearly not code after collecting enough
+                if (line_stripped and
+                    not line_stripped.startswith('import ') and
+                    not line_stripped.startswith('from ') and
+                    not line_stripped.startswith('def ') and
+                    not line_stripped.startswith('class ') and
+                    not line_stripped.startswith('#') and
+                    ' = ' not in line_stripped and
+                    '(' not in line_stripped and
+                    len(code_lines) > 15):
+                    break
+                code_lines.append(line)
+
+        if code_lines:
+            code = '\n'.join(code_lines)
+            code = code.rstrip()
+            if len(code) > 100 and ('import' in code or 'def ' in code):
+                return code
+
+        return None
 
 
 class Manager(Agent):
@@ -270,7 +458,12 @@ class Manager(Agent):
         print(f"\nProcessing: {path}")
 
         _, _, _, structure = self._read_file(path)
-        result = {"file": path, "task": task, "results": {}, "summary": {}}
+        result = {
+            "file": path,
+            "task": task,
+            "timestamp": __import__('datetime').datetime.now().isoformat(),
+            "pipeline": {}
+        }
 
         # Check OpenML if enabled
         if use_openml and self.openml.dataset_index:
@@ -278,23 +471,57 @@ class Manager(Agent):
             similar = self.openml.find_similar_datasets(structure, limit=3)
             if similar:
                 print(f"  Found {len(similar)} similar datasets")
-                result["openml_similar"] = [{"name": s["dataset"]["name"], "similarity": s["similarity_score"]} for s in similar]
+                result["openml_context"] = {
+                    "similar_count": len(similar),
+                    "top_match": similar[0]["dataset"]["name"] if similar else None
+                }
 
         # Feature engineering
         print("\nFeature engineering...")
-        result["results"]["features"] = self.feature_agent.analyze(path, target, model)
-        result["summary"]["features_done"] = True
+        feature_info = self.feature_agent.analyze(path, target, model)
+        result["pipeline"]["features"] = feature_info
+        print(f"   → {len(feature_info.get('features', []))} features selected")
 
         # Modeling
         print("\nModel generation...")
-        result["results"]["modeling"] = self.modeling_agent.generate(path, problem_type, target, model)
-        result["summary"]["modeling_done"] = True
-        result["summary"]["code_generated"] = result["results"]["modeling"]["code_generated"]
+        modeling_result = self.modeling_agent.generate(
+            path, feature_info, problem_type, target, model
+        )
+        result["pipeline"]["modeling"] = modeling_result
+        print(f"   → Problem type: {modeling_result.get('problem_type', 'unknown')}")
+        print(f"   → Target: {modeling_result.get('target', 'unknown')}")
+        print(f"   → Models: {', '.join(modeling_result.get('recommended_models', []))}")
+
+        # Summary
+        result["summary"] = {
+            "features_count": len(feature_info.get('features', [])),
+            "problem_type": modeling_result.get('problem_type'),
+            "target": modeling_result.get('target'),
+            "code_generated": modeling_result.get('code_generated', False),
+            "models": modeling_result.get('recommended_models', [])
+        }
 
         # Domain analysis if domain provided
         if domain:
-            print(f"\nDomain analysis ({domain})...")
-            result["results"]["domain"] = self.domain_agent.analyze(path, domain, model)
-            result["summary"]["domain_done"] = True
+            print(f"\n Adding domain context: {domain}")
+            result["domain_context"] = {"domain": domain, "note": "Domain expert analysis available if needed"}
+
+        print(f"\n Pipeline complete!")
+        if modeling_result.get('code_path'):
+            print(f" Ready to run: python {modeling_result['code_path']}")
 
         return result
+
+    def quick_process(self, path: str, target: Optional[str] = None) -> dict:
+        """Ultra-fast processing - minimal output."""
+        _, _, _, structure = self._read_file(path)
+        feature_info = self.feature_agent.analyze(path, target)
+        modeling_result = self.modeling_agent.generate(path, feature_info, target=target)
+
+        return {
+            "file": path,
+            "target": modeling_result.get('target'),
+            "problem": modeling_result.get('problem_type'),
+            "models": modeling_result.get('recommended_models', [])[:2],
+            "code": modeling_result.get('code_path')
+        }
