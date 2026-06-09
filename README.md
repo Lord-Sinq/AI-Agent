@@ -30,12 +30,12 @@ DEFAULT_MODEL=gpt-4o-mini
 ### 3. Build and start the container
 
 docker-compose build
-docker-compose up -d
+docker-compose up -d # runs the container in the background (detached)
 
 ### 4. Attach VS Code to the container
 
 - Open VS Code
-- Click the remote button (><) in the bottom-left corner
+- Click the remote button (><) in the bottom-left corner or F1 key
 - Select "Attach to Running Container..."
 - Choose ai-agent from the list
 - Open the /app folder
@@ -60,14 +60,17 @@ Once running, select a file from the data/ directory:
 Available files in 'data':
 
 1. employees.csv
-2. random.txt
+2. customer_churn.csv
+3. medical_patients.csv
 
-Select a file (1-2):
+Select a file (1-3):
 
-The application processes your file through two AI agents:
+The application processes your file through a pipeline of AI agents:
 
-- Data Organizer Agent - Analyzes and recommends organization strategy
-- Verifier Agent - Validates the approach
+- Feature Engineering Agent - Recommends features, scaling, encoding, and columns to drop
+- Modeling Agent - Generates ML model recommendations and Python training code
+- Domain Expert Agent - Adds optional domain-aware analysis when a domain is provided
+- OpenML Agent - Optionally checks similar OpenML datasets for context
 
 ## Command Line Options
 
@@ -138,7 +141,7 @@ AI-Agent/ \
 ├── Dockerfile \
 ├── docker-compose.yml \
 ├── .env.example \
-└── README.md 
+└── README.md
 
 ## Adding Your Own Data Files
 
@@ -201,17 +204,22 @@ docker rmi ai-agent-ai-agent
 
 ## Requirements
 
+- scipy>=1.10.0
+- pandas>=3.0.3
 - python-dotenv>=1.0.0
 - requests>=2.31.0
+- numpy>=2.4.6
+- scikit-learn>=1.9.0
+- xgboost>=3.2.0
 
 ## How It Works
 
-1. File Detection - Scans data/ directory for files
-2. Data Organizer Agent - Sends sample to Azure OpenAI
-3. AI Analysis - LLM recommends sorting strategy
-4. Data Organization - Applies recommended sorting
-5. Verifier Agent - Validates the organization
-6. Results Display - Outputs JSON with analysis
+1. File Detection - Scans the `data/` directory for files
+2. OpenML Agent - Optionally finds similar datasets for context
+3. Feature Engineering Agent - Chooses features, scaling, encoding, and drop columns
+4. Modeling Agent - Generates ML problem type, model recommendations, and Python code
+5. Manager Orchestrator - Runs the pipeline and stores the results
+6. Results Display - Outputs a summary and generated code path
 
 ## Acknowledgments
 
