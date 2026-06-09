@@ -12,6 +12,7 @@ services:
       - AZURE_DEPLOYMENT_NAME=${AZURE_DEPLOYMENT_NAME}
       - AZURE_API_VERSION=${AZURE_API_VERSION}
       - DEFAULT_MODEL=${DEFAULT_MODEL}
+      - STRICT_JSON_MODE=${STRICT_JSON_MODE}
     volumes:
       # Mount BOTH data and source code for development
       - ./data:/app/data

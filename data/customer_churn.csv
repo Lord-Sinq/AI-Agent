@@ -1,21 +1,51 @@
-customer_id,age,gender,tenure_months,monthly_charge,contract_type,payment_method,tech_support,streaming_tv,churned
-CUST001,45,Male,24,89.50,Month-to-month,Electronic check,No,Yes,Yes
-CUST002,32,Female,36,65.20,One year,Credit card,Yes,Yes,No
-CUST003,28,Male,12,45.80,Month-to-month,Bank transfer,No,No,Yes
-CUST004,51,Female,48,120.30,Two year,Automatic,Yes,Yes,No
-CUST005,37,Male,18,78.90,Month-to-month,Electronic check,No,Yes,Yes
-CUST006,29,Female,60,95.40,One year,Credit card,Yes,Yes,No
-CUST007,64,Male,6,55.20,Month-to-month,Electronic check,No,No,Yes
-CUST008,42,Female,72,110.60,Two year,Automatic,Yes,Yes,No
-CUST009,35,Male,30,70.30,One year,Bank transfer,Yes,No,No
-CUST010,58,Female,15,85.70,Month-to-month,Credit card,No,Yes,Yes
-CUST011,31,Male,42,62.80,One year,Electronic check,Yes,Yes,No
-CUST012,47,Female,24,95.20,Month-to-month,Bank transfer,No,Yes,Yes
-CUST013,52,Male,54,115.40,Two year,Automatic,Yes,Yes,No
-CUST014,26,Female,9,48.90,Month-to-month,Credit card,No,No,Yes
-CUST015,39,Male,38,88.60,One year,Electronic check,Yes,Yes,No
-CUST016,61,Female,14,72.40,Month-to-month,Bank transfer,No,Yes,Yes
-CUST017,44,Male,48,105.70,Two year,Automatic,Yes,Yes,No
-CUST018,33,Female,20,58.30,Month-to-month,Credit card,No,No,Yes
-CUST019,49,Male,62,98.20,One year,Electronic check,Yes,Yes,No
-CUST020,56,Female,28,82.90,Month-to-month,Bank transfer,No,Yes,Yes
+customer_id,age,gender,tenure_months,monthly_charge,contract_type,payment_method,tech_support,streaming_tv,online_security,device_protection,paperless_billing,income_bracket,num_dependents,satisfaction_score,churned
+CUST001,45,Male,24,89.50,Month-to-month,Electronic check,No,Yes,No,No,Yes,Medium,1,3,Yes
+CUST002,32,Female,36,65.20,One year,Credit card,Yes,Yes,Yes,Yes,No,High,0,5,No
+CUST003,28,Male,12,45.80,Month-to-month,Bank transfer,No,No,No,No,Yes,Low,2,2,Yes
+CUST004,51,Female,48,120.30,Two year,Automatic,Yes,Yes,Yes,Yes,No,High,3,5,No
+CUST005,37,Male,18,78.90,Month-to-month,Electronic check,No,Yes,No,No,Yes,Medium,1,2,Yes
+CUST006,29,Female,60,95.40,One year,Credit card,Yes,Yes,Yes,Yes,No,High,0,4,No
+CUST007,64,Male,6,55.20,Month-to-month,Electronic check,No,No,No,No,Yes,Low,0,1,Yes
+CUST008,42,Female,72,110.60,Two year,Automatic,Yes,Yes,Yes,Yes,No,High,2,5,No
+CUST009,35,Male,30,70.30,One year,Bank transfer,Yes,No,Yes,No,Yes,Medium,1,4,No
+CUST010,58,Female,15,85.70,Month-to-month,Credit card,No,Yes,No,No,Yes,Low,0,2,Yes
+CUST011,31,Male,42,62.80,One year,Electronic check,Yes,Yes,No,Yes,No,Medium,2,3,No
+CUST012,47,Female,24,95.20,Month-to-month,Bank transfer,No,Yes,No,No,Yes,Medium,1,2,Yes
+CUST013,52,Male,54,115.40,Two year,Automatic,Yes,Yes,Yes,Yes,No,High,2,5,No
+CUST014,26,Female,9,48.90,Month-to-month,Credit card,No,No,No,No,Yes,Low,0,1,Yes
+CUST015,39,Male,38,88.60,One year,Electronic check,Yes,Yes,No,Yes,No,Medium,1,3,No
+CUST016,61,Female,14,72.40,Month-to-month,Bank transfer,No,Yes,No,No,Yes,Low,0,2,Yes
+CUST017,44,Male,48,105.70,Two year,Automatic,Yes,Yes,Yes,Yes,No,High,2,5,No
+CUST018,33,Female,20,58.30,Month-to-month,Credit card,No,No,No,No,Yes,Low,1,2,Yes
+CUST019,49,Male,62,98.20,One year,Electronic check,Yes,Yes,Yes,No,Yes,High,3,4,No
+CUST020,56,Female,28,82.90,Month-to-month,Bank transfer,No,Yes,No,No,Yes,Medium,1,2,Yes
+CUST021,41,Male,33,72.10,One year,Credit card,Yes,No,Yes,Yes,No,High,2,4,No
+CUST022,55,Female,19,91.30,Month-to-month,Electronic check,No,Yes,No,No,Yes,Medium,2,2,Yes
+CUST023,30,Male,8,49.20,Month-to-month,Bank transfer,No,No,No,No,Yes,Low,0,1,Yes
+CUST024,48,Female,51,118.70,Two year,Automatic,Yes,Yes,Yes,Yes,No,High,1,5,No
+CUST025,36,Male,27,77.40,Month-to-month,Credit card,No,Yes,No,No,Yes,Medium,1,3,Yes
+CUST026,62,Female,5,59.80,Month-to-month,Electronic check,No,No,No,No,Yes,Low,0,1,Yes
+CUST027,43,Male,44,85.20,One year,Bank transfer,Yes,Yes,Yes,No,Yes,High,2,4,No
+CUST028,27,Female,11,52.30,Month-to-month,Credit card,No,Yes,No,No,Yes,Low,1,2,Yes
+CUST029,50,Male,58,109.40,Two year,Automatic,Yes,Yes,Yes,Yes,No,High,2,5,No
+CUST030,34,Female,22,68.90,One year,Electronic check,Yes,Yes,No,Yes,No,Medium,1,3,No
+CUST031,60,Male,17,80.50,Month-to-month,Bank transfer,No,Yes,No,No,Yes,Medium,0,2,Yes
+CUST032,46,Female,39,99.30,One year,Credit card,Yes,No,Yes,Yes,No,High,2,4,No
+CUST033,25,Male,7,44.20,Month-to-month,Electronic check,No,No,No,No,Yes,Low,0,1,Yes
+CUST034,53,Female,55,112.80,Two year,Automatic,Yes,Yes,Yes,Yes,No,High,3,5,No
+CUST035,38,Male,29,74.60,Month-to-month,Credit card,No,Yes,No,No,Yes,Medium,1,2,Yes
+CUST036,59,Female,13,81.40,Month-to-month,Bank transfer,No,Yes,No,No,Yes,Medium,1,2,Yes
+CUST037,40,Male,46,92.70,One year,Electronic check,Yes,Yes,Yes,No,Yes,High,2,4,No
+CUST038,54,Female,3,67.30,Month-to-month,Credit card,No,Yes,No,No,Yes,Low,0,1,Yes
+CUST039,63,Male,67,125.90,Two year,Automatic,Yes,Yes,Yes,Yes,No,High,2,5,No
+CUST040,23,Female,10,50.10,Month-to-month,Electronic check,No,No,No,No,Yes,Low,0,1,Yes
+CUST041,57,Male,35,87.80,One year,Bank transfer,Yes,Yes,No,Yes,No,Medium,1,3,No
+CUST042,65,Female,21,76.20,Month-to-month,Credit card,No,Yes,No,No,Yes,Low,1,2,Yes
+CUST043,19,Male,4,42.50,Month-to-month,Electronic check,No,No,No,No,Yes,Low,0,1,Yes
+CUST044,47,Female,63,113.90,Two year,Automatic,Yes,Yes,Yes,Yes,No,High,2,5,No
+CUST045,30,Male,26,71.80,One year,Credit card,Yes,Yes,Yes,No,Yes,Medium,1,3,No
+CUST046,66,Female,16,84.60,Month-to-month,Bank transfer,No,Yes,No,No,Yes,Low,0,2,Yes
+CUST047,44,Male,41,102.30,One year,Electronic check,Yes,Yes,No,Yes,No,High,2,4,No
+CUST048,52,Female,49,107.90,Two year,Automatic,Yes,Yes,Yes,Yes,No,High,1,5,No
+CUST049,34,Male,32,68.40,Month-to-month,Credit card,No,Yes,No,No,Yes,Medium,1,2,Yes
+CUST050,48,Female,12,83.70,Month-to-month,Electronic check,No,Yes,No,No,Yes,Medium,2,2,Yes

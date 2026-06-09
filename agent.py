@@ -7,12 +7,13 @@ import io
 import json
 import mimetypes
 import re
+import pandas as pd
+
 from typing import Any, Dict, List, Optional
 from pathlib import Path
 from llms import LLMManager
 from openMLAgentLocal import OpenMLAgent
-from caafeValidator import CAAFEFeatureValidator, extract_code_from_response
-
+from caafeValidator import CAAFEFeatureValidator
 
 class Agent:
     """Base agent with common utilities."""
@@ -100,8 +101,6 @@ class Agent:
         if not text:
             return None
 
-        import re
-
         # Remove think tags and everything before them
         if '<think>' in text:
             think_end = text.find('</think>')
@@ -149,6 +148,15 @@ class Agent:
 
         return None
 
+    @staticmethod
+    def _summarize_response(text: str, max_length: int = 1000) -> str:
+        if not text:
+            return ""
+        summary = text.replace('\n', ' ').replace('\r', ' ').strip()
+        if len(summary) > max_length:
+            return summary[:max_length].rstrip() + "..."
+        return summary
+
 
 class DomainExpertAgent(Agent):
     """Domain-specific analysis agent."""
@@ -189,25 +197,180 @@ class FeatureEngineerAgent(Agent):
 
         prompt = f"""DATA: {path}
             ROWS: {rows}
-            COLS: {headers[:10]}
+            COLS: {headers}
             TYPES: {data_types}
             TARGET: {target if target else 'auto'}
 
-            RETURN ONLY VALID JSON - NO OTHER TEXT:
-            {{"features":["col1","col2"],"scale":["numeric_col"],"encode":{{"cat_col":"label"}},"drop":["id_col"]}}"""
+            You are a pandas feature-engineering assistant.
+            Your final answer must be only one valid JSON object.
+            Do not include any explanation, analysis, reasoning, or markdown.
+            Use actual column names from COLS and select useful features, scaling, encoding, and drops.
+            If the dataset contains obvious identifier or metadata columns, drop them in DROP.
+            If you can create a new derived feature, include it in FEATURE_CODE.
+
+            RETURN ONLY VALID JSON - NO OTHER TEXT.
+            Use actual column names from COLS; do not use placeholders like col1, numeric_col, cat_col, or id_col.
+            Output exactly one JSON object with keys: features, scale, encode, drop, feature_code.
+            Optional keys may include: feature_details, feature_reasons, feature_notes, derived_features, feature_metadata.            If you have extra context about why a feature was selected, include it in feature_metadata.
+            Keep metadata concise and useful.            If you cannot produce valid JSON, return {{"error":"json"}} only.
+            Example output:
+                {{"features":["age","salary"],"scale":["age"],"encode":{{"gender":"label"}},"drop":["customer_id"],"feature_code":"df['age_squared'] = df['age'] ** 2","feature_details":"Scale numeric columns and label encode gender.","derived_features":["age_squared"],"feature_metadata":{{"reason":"high correlation with churn"}}}}"""
 
         resp = self.llm.generate(prompt, model=model, max_tokens=800)
-        recommendations = self._extract_json(resp.get("text", ""))
+        raw_response = resp.get("text", "")
+        recommendations = self._normalize_feature_recommendations(self._extract_json(raw_response), headers, data_types, target)
+        feature_details = self._summarize_response(raw_response)
 
-        if not recommendations:
+        # If response invalid, attempt up to two retries with clearer instructions
+        attempts = 0
+        while not self._valid_feature_recommendations(recommendations) and attempts < 2:
+            attempts += 1
+            print(f"[WARNING] Feature engineer response did not contain required JSON keys. Retry #{attempts}.")
+            if isinstance(recommendations, dict) and recommendations.get("error") == "json":
+                # Model explicitly signaled it cannot produce JSON
+                break
+
+            retry_prompt = f"""DATA: {path}
+            ROWS: {rows}
+            COLS: {headers}
+            TYPES: {data_types}
+            TARGET: {target if target else 'auto'}
+
+            Use actual column names from COLS only and choose useful features, scaling, encodings, and drops.
+            If a column looks like an identifier or metadata, include it in DROP.
+            If you can create a derived feature, include it in FEATURE_CODE.
+            Optional keys may include: feature_details, feature_reasons, feature_notes, derived_features, feature_metadata.
+            RETURN ONLY VALID JSON - NO OTHER TEXT.
+            Output exactly one JSON object with keys: features, scale, encode, drop, feature_code.
+            If you cannot produce valid JSON, return {{"error":"json"}} only.
+            IMPORTANT: do not return partial JSON. If you must, return {{"error":"json"}} instead.
+            YOUR JSON:"""
+
+            retry_resp = self.llm.generate(retry_prompt, model=model, max_tokens=800)
+            recommendations = self._normalize_feature_recommendations(
+                self._extract_json(retry_resp.get("text", "")), headers, data_types, target)
+
+            # If retry returns a fragment (like encode mapping), attempt wrapping again
+            if isinstance(recommendations, dict) and not self._valid_feature_recommendations(recommendations):
+                if headers and set(recommendations.keys()).issubset(set(headers)) and all(isinstance(v, str) for v in recommendations.values()):
+                    wrapped = {
+                        "features": [h for h in headers if h not in recommendations.keys() and h != target][:10],
+                        "scale": [h for h in headers if data_types.get(h) in ['numeric', 'float']][:5],
+                        "encode": recommendations,
+                        "drop": [h for h in headers if 'id' in h.lower() or 'date' in h.lower()],
+                        "feature_code": "",
+                        "feature_metadata": {"note": "wrapped encode-only response"}
+                    }
+                    if self._valid_feature_recommendations(wrapped):
+                        recommendations = wrapped
+                        break
+
+            # If the response contained some keys but not the required top-level ones,
+            # ask the model to complete the JSON using the partial as context.
+            if isinstance(recommendations, dict) and recommendations and not self._valid_feature_recommendations(recommendations):
+                completion_prompt = f"""You returned a partial JSON: {json.dumps(recommendations)}\n\nUsing the DATA: {path} with COLS: {headers} and TYPES: {data_types}, produce ONLY one valid JSON object with keys: features, scale, encode, drop, feature_code.\nOptional keys may include: feature_details, feature_reasons, feature_notes, derived_features, feature_metadata.\nDo not invent columns outside COLS. Fill missing keys sensibly and use actual column names.\nIf you cannot produce valid JSON, return {{"error":"json"}} only.\nRETURN ONLY VALID JSON."""
+                comp_resp = self.llm.generate(completion_prompt, model=model, max_tokens=800)
+                comp_json = self._normalize_feature_recommendations(
+                    self._extract_json(comp_resp.get("text", "")), headers, data_types, target)
+                if self._valid_feature_recommendations(comp_json):
+                    recommendations = comp_json
+                    break
+
+        if not self._valid_feature_recommendations(recommendations):
+            print("[WARNING] Feature engineer JSON output invalid after retries. Using default fallback.")
             recommendations = self._default_features(headers, data_types)
+
+        if not isinstance(recommendations, dict):
+            recommendations = {}
 
         return {
             "features": recommendations.get("features", headers[:10]),
             "scale": recommendations.get("scale", []),
             "encode": recommendations.get("encode", {}),
-            "drop": recommendations.get("drop", [])
+            "drop": recommendations.get("drop", []),
+            "feature_code": recommendations.get("feature_code", ""),
+            "feature_details": recommendations.get("feature_details", feature_details),
+            "feature_reasons": recommendations.get("feature_reasons", ""),
+            "feature_notes": recommendations.get("feature_notes", ""),
+            "derived_features": recommendations.get("derived_features", []),
+            "feature_metadata": recommendations.get("feature_metadata", {}),
+            "raw_feature_response": raw_response
         }
+
+    def _normalize_feature_recommendations(
+        self,
+        recommendations: Any,
+        headers: List[str],
+        data_types: Dict[str, str],
+        target: Optional[str]
+    ) -> Any:
+        if isinstance(recommendations, dict):
+            if self._valid_feature_recommendations(recommendations):
+                return recommendations
+
+            # heuristic: if all keys look like column names and values are strings,
+            # treat as an encode mapping
+            if headers and set(recommendations.keys()).issubset(set(headers)) and all(isinstance(v, str) for v in recommendations.values()):
+                wrapped = {
+                    "features": [h for h in headers if h not in recommendations.keys() and h != target][:10],
+                    "scale": [h for h in headers if data_types.get(h) in ['numeric', 'float']][:5],
+                    "encode": recommendations,
+                    "drop": [h for h in headers if 'id' in h.lower() or 'date' in h.lower()],
+                    "feature_code": "",
+                    "feature_metadata": {"note": "wrapped encode-only response"}
+                }
+                if self._valid_feature_recommendations(wrapped):
+                    return wrapped
+
+            # Heuristic: if the model returned a partial feature object, fill missing keys.
+            if any(key in recommendations for key in ["features", "scale", "encode", "drop", "feature_code"]):
+                wrapped = {
+                    "features": recommendations.get("features", [h for h in headers if h != target][:10]),
+                    "scale": recommendations.get("scale", [h for h in headers if data_types.get(h) in ['numeric', 'float']][:5]),
+                    "encode": recommendations.get("encode", {}),
+                    "drop": recommendations.get("drop", [h for h in headers if 'id' in h.lower() or 'date' in h.lower()]),
+                    "feature_code": recommendations.get("feature_code", ""),
+                    "feature_details": recommendations.get("feature_details", ""),
+                    "feature_reasons": recommendations.get("feature_reasons", ""),
+                    "feature_notes": recommendations.get("feature_notes", ""),
+                    "derived_features": recommendations.get("derived_features", []),
+                    "feature_metadata": recommendations.get("feature_metadata", {"note": "wrapped partial feature response"})
+                }
+                if self._valid_feature_recommendations(wrapped):
+                    return wrapped
+
+        if isinstance(recommendations, list) and all(isinstance(item, str) for item in recommendations):
+            return {
+                "features": recommendations[:10],
+                "scale": [h for h in headers if data_types.get(h) in ['numeric', 'float']][:5],
+                "encode": {},
+                "drop": [h for h in headers if 'id' in h.lower() or 'date' in h.lower()],
+                "feature_code": "",
+                "feature_metadata": {"note": "wrapped feature list response"}
+            }
+
+        return recommendations
+
+    def _valid_feature_recommendations(self, recommendations: Any) -> bool:
+        if not isinstance(recommendations, dict):
+            return False
+
+        required_keys = {"features", "scale", "encode", "drop", "feature_code"}
+        if not required_keys.issubset(recommendations.keys()):
+            return False
+
+        if not isinstance(recommendations.get("features"), list):
+            return False
+        if not isinstance(recommendations.get("scale"), list):
+            return False
+        if not isinstance(recommendations.get("encode"), dict):
+            return False
+        if not isinstance(recommendations.get("drop"), list):
+            return False
+        if not isinstance(recommendations.get("feature_code"), str):
+            return False
+
+        return True
 
     def _default_features(self, headers: List[str], data_types: Dict[str, str]) -> dict:
         numeric = [h for h in headers if data_types.get(h) in ['numeric', 'float']]
@@ -217,7 +380,14 @@ class FeatureEngineerAgent(Agent):
             "features": headers[:10],
             "scale": numeric[:5],
             "encode": {col: "label" for col in categorical[:3]},
-            "drop": [h for h in headers if 'id' in h.lower() or 'date' in h.lower()]
+            "drop": [h for h in headers if 'id' in h.lower() or 'date' in h.lower()],
+            "feature_code": "",
+            "feature_details": "Fallback default features used because the model response could not be parsed into valid JSON.",
+            "feature_reasons": "Fallback generated defaults",
+            "feature_notes": "Default feature list because JSON extraction failed.",
+            "derived_features": [],
+            "feature_metadata": {"note": "default fallback"},
+            "raw_feature_response": ""
         }
 
 
@@ -234,12 +404,36 @@ class ModelingAgent(Agent):
 
         # Build feature context
         feature_context = ""
+        validated_code = ""
+        feature_details = ""
+        feature_reasons = ""
+        feature_notes = ""
+        derived_features = []
+        feature_metadata = {}
         if feature_info:
             features = feature_info.get('features', [])[:8]
             scale = feature_info.get('scale', [])[:4]
             encode = feature_info.get('encode', {})
             drop = feature_info.get('drop', [])[:3]
+            validated_code = feature_info.get('validated_feature_code', "") or ""
+            feature_details = feature_info.get('feature_details', "") or ""
+            feature_reasons = feature_info.get('feature_reasons', "") or ""
+            feature_notes = feature_info.get('feature_notes', "") or ""
+            derived_features = feature_info.get('derived_features', [])[:4]
+            feature_metadata = feature_info.get('feature_metadata', {}) or {}
             feature_context = f"\nFEATURES: {features}\nSCALE: {scale}\nENCODE: {encode}\nDROP: {drop}"
+            if validated_code:
+                feature_context += f"\nVALIDATED_FEATURE_CODE:\n{validated_code}"
+            if feature_details:
+                feature_context += f"\nFEATURE_DETAILS: {feature_details[:800]}"
+            if feature_reasons:
+                feature_context += f"\nFEATURE_REASONS: {feature_reasons[:800]}"
+            if feature_notes:
+                feature_context += f"\nFEATURE_NOTES: {feature_notes[:800]}"
+            if derived_features:
+                feature_context += f"\nDERIVED_FEATURES: {derived_features}"
+            if feature_metadata:
+                feature_context += f"\nFEATURE_METADATA: {feature_metadata}"
 
         # Get sample - limited to save tokens
         sample_lines = text.splitlines()[:3]
@@ -247,12 +441,19 @@ class ModelingAgent(Agent):
 
         prompt = f"""{Path(path).name} | {rows} rows | {len(headers)} cols
             Target: {target or 'auto'}{feature_context}
-
+            If VALIDATED_FEATURE_CODE is provided, use it to transform the dataset before modeling.
+            Use the feature engineering details to choose appropriate preprocessing and models.
+            Prefer simple, robust models for small datasets and use actual column names.
             SAMPLE:
             {sample[:300]}
 
-            STRICT JSON OUTPUT - NO TEXT, NO EXPLANATION:
-            {{"problem":"classification|regression","target":"col_name","models":["model1"],"code":"PYTHON CODE HERE"}}
+            RETURN ONLY VALID JSON - NO OTHER TEXT.
+            Use actual column names from the dataset and provided feature engineering guidance.
+            Do not include markdown, code fences, analysis, or explanation.
+            Output exactly one JSON object with keys: problem, target, models, code.
+            If you cannot produce valid JSON, return {{"error":"json"}} only.
+            Example output:
+            {{"problem":"classification","target":"Churn","models":["RandomForestClassifier"],"code":"import pandas as pd\n..."}}
 
             YOUR JSON:"""
 
@@ -262,6 +463,15 @@ class ModelingAgent(Agent):
 
         # Extract JSON
         result = self._extract_json(response_text)
+
+        # Normalize array responses into a modeling object
+        if isinstance(result, list):
+            result = {
+                "problem": problem_type or "classification",
+                "target": target or "target",
+                "models": result,
+                "code": ""
+            }
 
         # Fallback: extract code block directly
         if not result and 'import pandas' in response_text:
@@ -273,23 +483,32 @@ class ModelingAgent(Agent):
 
         # Extract code from result (handle None case)
         code = None
-        if result:
+        if result and isinstance(result, dict):
             code = result.get("code")
 
         # If code is still empty, try direct extraction
         if not code or (isinstance(code, str) and len(code) < 50):
             code = self._extract_code_block(response_text)
-
         # Fix cutoff issues in code (only if code is not None)
         if code and isinstance(code, str):
             code = self._clean_code(code)
 
-        # Save code if valid
+        # Save code if valid. Accept shorter code if it clearly contains
+        # Python constructs (imports, defs, sklearn usage). Log reasons when
+        # rejecting.
         code_path = None
-        if code and isinstance(code, str) and len(code) > 100:
+        accept = False
+        if code and isinstance(code, str):
+            code_len = len(code)
+            has_import = 'import ' in code
+            has_def = 'def ' in code or 'class ' in code
+            has_sklearn = 'sklearn' in code or 'from sklearn' in code
+            if code_len > 100 or (code_len > 40 and (has_import or has_def or has_sklearn)):
+                accept = True
+
+        if accept:
             # Unescape the code
             code = code.replace('\\n', '\n').replace('\\t', '\t').replace('\\"', '"')
-
             code_filename = f"{Path(path).stem}_model.py"
             code_path = Path.cwd() / "generated_code" / code_filename
             code_path.parent.mkdir(exist_ok=True)
@@ -298,7 +517,20 @@ class ModelingAgent(Agent):
             print(f"[INFO] Code lines: {len(code.split(chr(10)))}")
         else:
             code_length = len(code) if code and isinstance(code, str) else 0
-            print(f"[WARNING] No valid code generated (length: {code_length})")
+            reasons = []
+            if code_length < 40:
+                reasons.append(f"too short ({code_length} chars)")
+            if code and isinstance(code, str) and not ('import ' in code or 'def ' in code or 'class ' in code):
+                reasons.append("missing imports/defs")
+            if not code:
+                reasons.append("no code found")
+            print(f"[WARNING] No valid code generated ({'; '.join(reasons)})")
+            # Save preview for debugging
+            if code and isinstance(code, str):
+                preview_path = Path.cwd() / "generated_code" / f"{Path(path).stem}_model_preview.txt"
+                preview_path.parent.mkdir(exist_ok=True)
+                preview_path.write_text(code[:2000])
+                print(f"[INFO] Code preview saved to {preview_path}")
 
         return {
             "problem_type": result.get("problem") if result else None,
@@ -311,7 +543,6 @@ class ModelingAgent(Agent):
 
     def _extract_code_from_response(self, text: str) -> dict:
         """Extract code directly from response when JSON parsing fails."""
-        import re
 
         code_match = re.search(r'```python\n(.*?)```', text, re.DOTALL)
         if not code_match:
@@ -331,7 +562,6 @@ class ModelingAgent(Agent):
 
     def _find_json_in_response(self, text: str) -> dict:
         """Find any JSON-like structure in the response."""
-        import re
 
         json_pattern = r'\{[^{}]*"problem"[^{}]*"code"[^{}]*\}'
         matches = re.findall(json_pattern, text, re.DOTALL)
@@ -348,8 +578,6 @@ class ModelingAgent(Agent):
         """Extract Python code block from response text."""
         if not text:
             return None
-
-        import re
 
         patterns = [
             r'```python\n(.*?)```',
@@ -380,7 +608,6 @@ class ModelingAgent(Agent):
             return ""
 
         # Remove thinking text before code
-        import re
         match = re.search(r'(import|from|def|class|#).*', code, re.DOTALL)
         if match:
             code = match.group(0)
@@ -455,6 +682,33 @@ class Manager(Agent):
         result["pipeline"]["features"] = feature_info
         print(f"   → {len(feature_info.get('features', []))} features selected")
 
+        # Feature validation
+        validation_result = {
+            "validated": False,
+            "note": "No feature code available for validation"
+        }
+        feature_code = feature_info.get("feature_code", "")
+        if target and feature_code:
+            try:
+                print("\nValidating generated feature code...")
+                df = pd.read_csv(path)
+                validator = CAAFEFeatureValidator(target=target)
+                validator.evaluate_baseline(df)
+                is_improved, score = validator.evaluate_feature(df, feature_code)
+                validation_result = {
+                    "validated": is_improved,
+                    "feature_code": feature_code,
+                    "score": score,
+                    "improvement": score - validator.baseline_score if is_improved else 0.0
+                }
+                feature_info["validated_feature_code"] = feature_code if is_improved else ""
+                print(f"   → Feature validation passed: {is_improved}")
+            except Exception as e:
+                validation_result = {"validated": False, "error": str(e)}
+                print(f"   → Feature validation error: {e}")
+
+        result["pipeline"]["feature_validation"] = validation_result
+
         # Modeling
         print("\nModel generation...")
         modeling_result = self.modeling_agent.generate(
@@ -479,7 +733,7 @@ class Manager(Agent):
             print(f"\n Adding domain context: {domain}")
             result["domain_context"] = {"domain": domain, "note": "Domain expert analysis available if needed"}
 
-        print(f"\n✅ Pipeline complete!")
+        print(f"\n Pipeline complete!")
         if modeling_result.get('code_path'):
             print(f" Ready to run: python {modeling_result['code_path']}")
 

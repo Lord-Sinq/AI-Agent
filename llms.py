@@ -5,6 +5,7 @@ LLM Manager Module - Enhanced for Strict JSON Output
 import os
 import json
 import requests
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -55,7 +56,8 @@ class LLMManager:
                 Examples of UNACCEPTABLE responses:
                 Here is your JSON: {"key": "value"}
                 {"key": "value"} (with extra text)
-                Think step by step and then provide... {"key": "value"}"""
+                Think step by step and then provide... {"key": "value"}
+                If you cannot respond with valid JSON only, respond with {"error":"json"} only."""
         else:
             return "You are a helpful assistant that provides accurate information."
 
@@ -69,8 +71,8 @@ class LLMManager:
         filepath = self.responses_dir / filename
 
         # Also save the raw response text separately for debugging
-        raw_text_path = self.responses_dir / f"{timestamp}_raw_response.txt"
-        raw_text_path.write_text(response.get("text", ""))
+        # raw_text_path = self.responses_dir / f"{timestamp}_raw_response.txt"
+        # raw_text_path.write_text(response.get("text", ""))
 
         response_data = {
             "timestamp": datetime.now().isoformat(),
@@ -80,15 +82,13 @@ class LLMManager:
             "prompt_preview": prompt[:200] + "..." if len(prompt) > 200 else prompt,
             "response": response.get("text", ""),
             "response_length": len(response.get("text", "")),
-            "strict_mode": self.strict_json_mode,
-            "raw_response_file": str(raw_text_path)
+            "strict_mode": self.strict_json_mode
         }
 
         try:
             with open(filepath, "w", encoding="utf-8") as f:
                 json.dump(response_data, f, indent=2, ensure_ascii=False)
             print(f"[INFO] Response saved to: {filepath}")
-            print(f"[INFO] Raw text saved to: {raw_text_path}")
         except Exception as e:
             print(f"[WARNING] Failed to save response: {e}")
 
@@ -179,12 +179,12 @@ class LLMManager:
 
     def _clean_json_response(self, text: str) -> str:
         """Aggressively clean response to extract only valid JSON."""
-        # Remove  tags
+
+        # Remove <think> blocks
         if '<think>' in text:
-            import re
             text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
 
-        # Remove common prefixes
+        # Remove common leading prefixes that are not part of JSON
         prefixes_to_remove = [
             r'^Here is your JSON:?\s*',
             r'^Here is the JSON:?\s*',
@@ -197,21 +197,96 @@ class LLMManager:
             r'^\s*',
         ]
 
-        import re
         for prefix in prefixes_to_remove:
             text = re.sub(prefix, '', text, flags=re.IGNORECASE)
 
-        # Remove trailing code blocks
+        # Remove trailing fenced code block endings
         text = re.sub(r'\s*```\s*$', '', text)
 
-        # Find first { or [
+        # Find all candidate JSON substrings by scanning for balanced braces/brackets
+        candidates = []
+        stack = []
+        start_idx = None
+        for i, ch in enumerate(text):
+            if ch in '{[':
+                if not stack:
+                    start_idx = i
+                stack.append(ch)
+            elif ch in '}]' and stack:
+                # check match
+                top = stack[-1]
+                if (top == '{' and ch == '}') or (top == '[' and ch == ']'):
+                    stack.pop()
+                    if not stack and start_idx is not None:
+                        candidates.append(text[start_idx:i+1])
+                        start_idx = None
+                else:
+                    # mismatched, reset
+                    stack = []
+                    start_idx = None
+
+        # Validate candidates and pick the largest valid JSON
+        valid_candidates = []
+        for c in candidates:
+            try:
+                json.loads(c)
+                valid_candidates.append(c)
+            except Exception:
+                continue
+
+        if valid_candidates:
+            # Prefer the largest valid JSON (most likely the full object)
+            valid_candidates.sort(key=lambda s: len(s), reverse=True)
+            return valid_candidates[0]
+
+        # If no fully valid candidate, try to sanitize likely JSON-like text by
+        # converting single-quoted dicts, Python booleans/None and removing
+        # trailing commentary. This helps when the model emits Python-style
+        # literals instead of strict JSON.
+        def try_sanitize_and_load(s: str) -> Optional[str]:
+            # Remove surrounding prose before first brace
+            import re
+            m = re.search(r'[\{\[]', s)
+            if m:
+                s = s[m.start():]
+            # Remove trailing non-brace text
+            last = None
+            for i in range(len(s)-1, -1, -1):
+                if s[i] in '}]':
+                    last = i
+                    break
+            if last is not None:
+                s = s[:last+1]
+
+            # Try simple Python->JSON normalization
+            candidate = s.strip()
+            # Replace Python True/False/None with JSON equivalents
+            candidate = re.sub(r'\bTrue\b', 'true', candidate)
+            candidate = re.sub(r'\bFalse\b', 'false', candidate)
+            candidate = re.sub(r'\bNone\b', 'null', candidate)
+            # Convert single quotes to double quotes when safe
+            # only if string uses single quotes for JSON-like structure
+            if "'{" not in candidate and '\\"' not in candidate:
+                candidate = candidate.replace("'", '"')
+
+            try:
+                json.loads(candidate)
+                return candidate
+            except Exception:
+                return None
+
+        for orig in candidates:
+            san = try_sanitize_and_load(orig)
+            if san:
+                return san
+
+        # Fallback: try to heuristically find first {..}..} block as before
         start = -1
         for i, char in enumerate(text):
             if char in '{[':
                 start = i
                 break
 
-        # Find last } or ]
         end = -1
         for i in range(len(text) - 1, -1, -1):
             if text[i] in '}]':
@@ -220,14 +295,13 @@ class LLMManager:
 
         if start != -1 and end != -1 and end > start:
             json_candidate = text[start:end+1]
-            # Validate it's valid JSON
             try:
                 json.loads(json_candidate)
                 return json_candidate
             except:
                 pass
 
-        # If we couldn't extract valid JSON, return original
+        # If none found return original text
         return text
 
     def list_azure_deployments(self) -> dict:
