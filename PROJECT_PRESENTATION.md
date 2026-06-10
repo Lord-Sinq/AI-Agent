@@ -36,8 +36,8 @@ Instead of manually exploring data, cleaning datasets, and writing boilerplate M
 │                   (main.py / CLI)                       │
 └────────────────────┬────────────────────────────────────┘
                      │
-        ┌────────────┴────────────┐
-        │                         │
+        ┌────────────┴───────────┐
+        │                        │
 ┌───────▼──────────┐   ┌─────────▼────────────┐
 │  File Picker     │   │  LLM Manager         │
 │  & Validation    │   │  (Azure OpenAI)      │
@@ -90,7 +90,18 @@ Instead of manually exploring data, cleaning datasets, and writing boilerplate M
   - Row count
   - Sample data preview
 
-### Step 2: **Feature Engineering Analysis**
+### Step 2: **OpenML Context Lookup (Optional but active unless stated)**
+
+**Local Agent**: `OpenMLAgentLocal`
+
+Automatically searches OpenMLdatasets for similar datasets:
+
+- Similar datasets already analyzed
+- Community insights
+- Benchmark comparisons
+- Best practices from similar problems
+
+### Step 3: **Feature Engineering Analysis**
 
 **Agent**: `FeatureEngineerAgent`
 
@@ -116,7 +127,7 @@ The AI analyzes the dataset and recommends:
 }
 ```
 
-### Step 3: **Machine Learning Model Generation**
+### Step 4: **Machine Learning Model Generation**
 
 **Agent**: `ModelingAgent`
 
@@ -134,7 +145,7 @@ The AI generates:
 - Complete, runnable ML pipeline
 - Can train models immediately
 
-### Step 4: **Domain-Specific Analysis (Optional)**
+### Step 5: **Domain-Specific Analysis (Optional)**
 
 **Agent**: `DomainExpertAgent`
 
@@ -145,17 +156,6 @@ If a domain is specified (e.g., "healthcare", "retail"):
 - Data quality issues to watch
 - Relevant business questions
 - Domain-specific context
-
-### Step 5: **OpenML Context Lookup (Optional but active unless stated)**
-
-**Agent**: `OpenMLAgent`
-
-Automatically searches OpenML for similar datasets:
-
-- Similar datasets already analyzed
-- Community insights
-- Benchmark comparisons
-- Best practices from similar problems
 
 ---
 
@@ -204,6 +204,12 @@ Automatically searches OpenML for similar datasets:
 - Ensures feature engineering quality
 - Validates recommendations against data
 
+### 7. **OpenML Datasets** (`openMLAgentLocal.py`)
+
+- Looks though pre grabbed datasets from OpenML
+- Benchmark comparisons
+- Finds best practices from similar problems
+
 ---
 
 ## Usage Examples
@@ -224,14 +230,14 @@ python main.py
 # Specify file and domain
 python main.py --file data/sales.csv --domain retail
 
-# Use specific model
-python main.py --file data/medical_patients.csv --model gpt-4o
-
 # Disable OpenML lookup
 python main.py --file data/employees.csv --no-openml
 
 # Save responses for debugging
 python main.py --save-responses --quiet
+
+# Use specific model ( not implemented)
+python main.py --file data/medical_patients.csv --model gpt-4o
 ```
 
 ### Available Flags
@@ -239,13 +245,13 @@ python main.py --save-responses --quiet
 | Flag               | Description                                          |
 | ------------------ | ---------------------------------------------------- |
 | `--file PATH`      | Path to CSV file                                     |
-| `--model NAME`     | LLM model to use                                     |
 | `--domain DOMAIN`  | Domain context (healthcare, retail, etc.)            |
 | `--target COLUMN`  | Target variable for prediction                       |
 | `--problem TYPE`   | Problem type: classification, regression, clustering |
 | `--no-openml`      | Disable OpenML dataset lookup                        |
 | `--save-responses` | Save all LLM responses                               |
 | `--quiet`          | Suppress interactive prompts                         |
+| `--model NAME`     | LLM model to use                                     |
 
 ---
 
