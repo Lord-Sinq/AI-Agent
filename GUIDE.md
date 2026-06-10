@@ -1,16 +1,5 @@
 # AI-Agent: Quick Guide
 
-### Pre-Guide Checklist
-
-- [ ] Azure OpenAI credentials configured in `.env`
-- [ ] Python environment activated
-- [ ] Docker running (if using Docker setup)
-- [ ] Test CSV files present in `data/` folder
-- [ ] Generated code directory exists
-- [ ] Backup screenshots ready (just in case)
-- [ ] Terminal/IDE open and ready
-- [ ] Internet connection stable
-
 ---
 
 ## How to Run
@@ -29,9 +18,6 @@ cp .env.example .env
 # Build and run
 docker-compose build
 docker-compose up -d
-
-# Run application
-python main.py
 ```
 
 ### Option B: Local Python
@@ -47,33 +33,31 @@ pip install -r requirements.txt
 # Configure environment
 cp .env.example .env
 # Edit .env with credentials
-
-# Run
-python main.py
 ```
 
 ---
 
-## 🚀 5-Minute Guide Script
-
 ### **Setup**
 
-```bash
-# Show current directory
-ls -la
+### Pre-Guide Checklist
 
-# Show available data files
-ls data/
-
-# Show the main entry point
-cat main.py | head -20
-```
-
-**Say:** "We have several CSV datasets ready to analyze."
+- [ ] Azure OpenAI credentials configured in `.env`
+- [ ] Python environment activated
+- [ ] Docker running (if using Docker setup)
+- [ ] Test CSV files present in `data/` folder
+- [ ] Generated code directory exists
+- [ ] Backup screenshots ready (just in case)
+- [ ] Terminal/IDE open and ready
+- [ ] Internet connection stable
 
 ---
 
 ### **Run Analysis**
+
+If using docker press F1 or > key in the search bar.
+Click on `Dev Container: Attach to Cunning Container...`
+Then click on the `Ai-Agent` Container.
+Inside the container run command bellow.
 
 ```bash
 # Start the tool
