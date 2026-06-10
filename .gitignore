@@ -63,7 +63,7 @@ htmlcov/
 .coverage
 
 # project dir's
-data/
+# data/
 responses/
 openml_cache/
 generated_code/

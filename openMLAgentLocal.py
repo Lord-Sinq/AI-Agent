@@ -302,7 +302,7 @@ class OpenMLAgent:
         Returns:
             Dictionary with best practices recommendations
         """
-        similar_datasets = self.find_similar_datasets(structure_info, limit=5)
+        similar_datasets = self.find_similar_datasets(structure_info, limit=10)
 
         best_practices = {
             "similar_datasets": [
