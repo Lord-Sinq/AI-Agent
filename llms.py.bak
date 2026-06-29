@@ -77,7 +77,7 @@ class LLMManager:
         response_data = {
             "timestamp": datetime.now().isoformat(),
             "model": model,
-            "max_completion_tokens": max_tokens,
+            "max_tokens": max_tokens,
             "prompt_length": len(prompt),
             "prompt_preview": prompt[:200] + "..." if len(prompt) > 200 else prompt,
             "response": response.get("text", ""),
@@ -131,7 +131,7 @@ class LLMManager:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt}
                 ],
-                "max_completion_tokens": max_tokens,
+                "max_tokens": max_tokens,
                 "temperature": 0.0,  # Lower for more deterministic output
                 "top_p": 0.9,
             }
