@@ -36,6 +36,7 @@ docker-compose.*.yml
 
 # Data files (keep directory structure but not files)
 data/*.csv
+data/*.arff
 data/*.txt
 !data/.gitkeep
 

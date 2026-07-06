@@ -32,6 +32,12 @@ class Agent:
         mt = Agent._detect_mimetype(p.name, content)
         text = Agent._prepare_text(content, mt)
         structure = Agent._get_structure(text, mt, p.name)
+
+        # For ARFF files, read the full structure with metadata
+        if p.suffix.lower() == '.arff' and structure.get('needs_full_read'):
+            structure = Agent._read_arff_structure(str(p))
+            structure["format"] = "arff"
+
         return content, mt, text, structure
 
     @staticmethod
@@ -55,8 +61,51 @@ class Agent:
         return content[:1024].hex()
 
     @staticmethod
+    def _read_arff_structure(file_path: str) -> Dict[str, Any]:
+        """Extract structure from ARFF file header."""
+        try:
+            from scipy.io import arff
+            data, meta = arff.loadarff(file_path)
+            df = pd.DataFrame(data)
+
+            # Decode bytes columns
+            for col in df.select_dtypes(include=['object']).columns:
+                try:
+                    if df[col].iloc[0] and isinstance(df[col].iloc[0], bytes):
+                        df[col] = df[col].str.decode('utf-8')
+                except (IndexError, AttributeError, UnicodeDecodeError):
+                    pass
+
+            info = {"rows": len(df), "columns": len(df.columns), "headers": list(df.columns)}
+
+            # Detect data types
+            types: Dict[str, str] = {}
+            for col in df.columns:
+                if pd.api.types.is_numeric_dtype(df[col]):
+                    types[col] = "numeric" if df[col].dtype == 'int64' else "float"
+                else:
+                    types[col] = "categorical"
+            if types:
+                info["data_types"] = types
+
+            return info
+        except ImportError:
+            return {"rows": 0, "columns": 0, "warning": "scipy not installed for ARFF support"}
+        except Exception as e:
+            return {"rows": 0, "columns": 0, "error": str(e)}
+
+    @staticmethod
     def _get_structure(content: str, mimetype: str, filename: str = "") -> Dict[str, Any]:
-        """Extract basic structure from CSV/text data."""
+        """Extract basic structure from CSV/ARFF/text data."""
+        # Handle ARFF files
+        if filename.endswith(".arff") or mimetype == "text/x-arff":
+            try:
+                # For ARFF, we need the file path, not just content
+                # Return a placeholder that will be enhanced in _read_file
+                return {"rows": 0, "columns": 0, "format": "arff", "needs_full_read": True}
+            except Exception:
+                pass
+
         lines = [l for l in content.splitlines() if l.strip()]
         if not lines:
             return {"rows": 0, "columns": 0}
@@ -201,20 +250,27 @@ class FeatureEngineerAgent(Agent):
             TYPES: {data_types}
             TARGET: {target if target else 'auto'}
 
-            You are a pandas feature-engineering assistant.
+            You are a data scientist prformming feature-engineering.
             Your final answer must be only one valid JSON object.
             Do not include any explanation, analysis, reasoning, or markdown.
             Use actual column names from COLS and select useful features, scaling, encoding, and drops.
             If the dataset contains obvious identifier or metadata columns, drop them in DROP.
-            If you can create a new derived feature, include it in FEATURE_CODE.
 
-            RETURN ONLY VALID JSON - NO OTHER TEXT.
+            NO MODEL GENERATION ONLY FEATURE ENGINEERING SUGGESTIONS.
+
+            RETURN ONLY VALID JSON - NO OTHER TEXT - NO CODE.
+
             Use actual column names from COLS; do not use placeholders like col1, numeric_col, cat_col, or id_col.
-            Output exactly one JSON object with keys: features, scale, encode, drop, feature_code.
-            Optional keys may include: feature_details, feature_reasons, feature_notes, derived_features, feature_metadata.            If you have extra context about why a feature was selected, include it in feature_metadata.
-            Keep metadata concise and useful.            If you cannot produce valid JSON, return {{"error":"json"}} only.
+            Output exactly one JSON object with keys: features, scale, encode, drop.
+            Optional keys may include: feature_details, feature_reasons, feature_notes, derived_features, feature_metadata.
+            If you have extra context about why a feature was selected, include it in feature_metadata.
+            Keep metadata concise and useful.
+            If you cannot produce valid JSON, return {{"error":"json"}} only.
+
+            Example of how to derive the features:
+                {{example, new_feature = feature1 * feature2}}
             Example output:
-                {{"features":["age","salary"],"scale":["age"],"encode":{{"gender":"label"}},"drop":["customer_id"],"feature_code":"df['age_squared'] = df['age'] ** 2","feature_details":"Scale numeric columns and label encode gender.","derived_features":["age_squared"],"feature_metadata":{{"reason":"high correlation with churn"}}}}"""
+                {{"features":["age","salary"],"scale":["age"],"encode":{{"gender":"label"}},"drop":["customer_id"],"feature_details":"Scale numeric columns and label encode gender.","derived_features":["age_squared"],"feature_metadata":{{"reason":"high correlation with churn"}}}}"""
 
         resp = self.llm.generate(prompt, model=model, max_tokens=800)
         raw_response = resp.get("text", "")
@@ -238,10 +294,10 @@ class FeatureEngineerAgent(Agent):
 
             Use actual column names from COLS only and choose useful features, scaling, encodings, and drops.
             If a column looks like an identifier or metadata, include it in DROP.
-            If you can create a derived feature, include it in FEATURE_CODE.
+            If you can create a derived feature, include it in response.
             Optional keys may include: feature_details, feature_reasons, feature_notes, derived_features, feature_metadata.
-            RETURN ONLY VALID JSON - NO OTHER TEXT.
-            Output exactly one JSON object with keys: features, scale, encode, drop, feature_code.
+            RETURN ONLY VALID JSON - NO OTHER TEXT - NO CODE.
+            Output exactly one JSON object with keys: features, scale, encode, drop.
             If you cannot produce valid JSON, return {{"error":"json"}} only.
             IMPORTANT: do not return partial JSON. If you must, return {{"error":"json"}} instead.
             YOUR JSON:"""
@@ -258,7 +314,7 @@ class FeatureEngineerAgent(Agent):
                         "scale": [h for h in headers if data_types.get(h) in ['numeric', 'float']][:5],
                         "encode": recommendations,
                         "drop": [h for h in headers if 'id' in h.lower() or 'date' in h.lower()],
-                        "feature_code": "",
+                        # "feature_code": "",
                         "feature_metadata": {"note": "wrapped encode-only response"}
                     }
                     if self._valid_feature_recommendations(wrapped):
@@ -268,7 +324,7 @@ class FeatureEngineerAgent(Agent):
             # If the response contained some keys but not the required top-level ones,
             # ask the model to complete the JSON using the partial as context.
             if isinstance(recommendations, dict) and recommendations and not self._valid_feature_recommendations(recommendations):
-                completion_prompt = f"""You returned a partial JSON: {json.dumps(recommendations)}\n\nUsing the DATA: {path} with COLS: {headers} and TYPES: {data_types}, produce ONLY one valid JSON object with keys: features, scale, encode, drop, feature_code.\nOptional keys may include: feature_details, feature_reasons, feature_notes, derived_features, feature_metadata.\nDo not invent columns outside COLS. Fill missing keys sensibly and use actual column names.\nIf you cannot produce valid JSON, return {{"error":"json"}} only.\nRETURN ONLY VALID JSON."""
+                completion_prompt = f"""You returned a partial JSON: {json.dumps(recommendations)}\n\nUsing the DATA: {path} with COLS: {headers} and TYPES: {data_types}, produce ONLY one valid JSON object with keys: features, scale, encode, drop.\nOptional keys may include: feature_details, feature_reasons, feature_notes, derived_features, feature_metadata.\nDo not invent columns outside COLS. Fill missing keys sensibly and use actual column names.\nIf you cannot produce valid JSON, return {{"error":"json"}} only.\nRETURN ONLY VALID JSON DO NOT RETURN CODE OR CODE SNIPPETS."""
                 comp_resp = self.llm.generate(completion_prompt, model=model, max_tokens=800)
                 comp_json = self._normalize_feature_recommendations(
                     self._extract_json(comp_resp.get("text", "")), headers, data_types, target)
@@ -288,7 +344,7 @@ class FeatureEngineerAgent(Agent):
             "scale": recommendations.get("scale", []),
             "encode": recommendations.get("encode", {}),
             "drop": recommendations.get("drop", []),
-            "feature_code": recommendations.get("feature_code", ""),
+            # "feature_code": recommendations.get("feature_code", ""),
             "feature_details": recommendations.get("feature_details", feature_details),
             "feature_reasons": recommendations.get("feature_reasons", ""),
             "feature_notes": recommendations.get("feature_notes", ""),
@@ -316,20 +372,19 @@ class FeatureEngineerAgent(Agent):
                     "scale": [h for h in headers if data_types.get(h) in ['numeric', 'float']][:5],
                     "encode": recommendations,
                     "drop": [h for h in headers if 'id' in h.lower() or 'date' in h.lower()],
-                    "feature_code": "",
+                    # "feature_code": "",
                     "feature_metadata": {"note": "wrapped encode-only response"}
                 }
                 if self._valid_feature_recommendations(wrapped):
                     return wrapped
 
             # Heuristic: if the model returned a partial feature object, fill missing keys.
-            if any(key in recommendations for key in ["features", "scale", "encode", "drop", "feature_code"]):
+            if any(key in recommendations for key in ["features", "scale", "encode", "drop"]):
                 wrapped = {
                     "features": recommendations.get("features", [h for h in headers if h != target][:10]),
                     "scale": recommendations.get("scale", [h for h in headers if data_types.get(h) in ['numeric', 'float']][:5]),
                     "encode": recommendations.get("encode", {}),
                     "drop": recommendations.get("drop", [h for h in headers if 'id' in h.lower() or 'date' in h.lower()]),
-                    "feature_code": recommendations.get("feature_code", ""),
                     "feature_details": recommendations.get("feature_details", ""),
                     "feature_reasons": recommendations.get("feature_reasons", ""),
                     "feature_notes": recommendations.get("feature_notes", ""),
@@ -345,7 +400,7 @@ class FeatureEngineerAgent(Agent):
                 "scale": [h for h in headers if data_types.get(h) in ['numeric', 'float']][:5],
                 "encode": {},
                 "drop": [h for h in headers if 'id' in h.lower() or 'date' in h.lower()],
-                "feature_code": "",
+                # "feature_code": "",
                 "feature_metadata": {"note": "wrapped feature list response"}
             }
 
@@ -355,7 +410,7 @@ class FeatureEngineerAgent(Agent):
         if not isinstance(recommendations, dict):
             return False
 
-        required_keys = {"features", "scale", "encode", "drop", "feature_code"}
+        required_keys = {"features", "scale", "encode", "drop"}
         if not required_keys.issubset(recommendations.keys()):
             return False
 
@@ -366,8 +421,6 @@ class FeatureEngineerAgent(Agent):
         if not isinstance(recommendations.get("encode"), dict):
             return False
         if not isinstance(recommendations.get("drop"), list):
-            return False
-        if not isinstance(recommendations.get("feature_code"), str):
             return False
 
         return True
@@ -381,7 +434,7 @@ class FeatureEngineerAgent(Agent):
             "scale": numeric[:5],
             "encode": {col: "label" for col in categorical[:3]},
             "drop": [h for h in headers if 'id' in h.lower() or 'date' in h.lower()],
-            "feature_code": "",
+            # "feature_code": "",
             "feature_details": "Fallback default features used because the model response could not be parsed into valid JSON.",
             "feature_reasons": "Fallback generated defaults",
             "feature_notes": "Default feature list because JSON extraction failed.",
@@ -402,6 +455,11 @@ class ModelingAgent(Agent):
         headers = structure.get('headers', [])
         rows = structure.get('rows', 0)
 
+        # Detect file format
+        file_ext = Path(path).suffix.lower()
+        is_arff = file_ext == '.arff'
+        file_format = "ARFF" if is_arff else "CSV"
+
         # Build feature context
         feature_context = ""
         validated_code = ""
@@ -415,15 +473,12 @@ class ModelingAgent(Agent):
             scale = feature_info.get('scale', [])[:4]
             encode = feature_info.get('encode', {})
             drop = feature_info.get('drop', [])[:3]
-            validated_code = feature_info.get('validated_feature_code', "") or ""
             feature_details = feature_info.get('feature_details', "") or ""
             feature_reasons = feature_info.get('feature_reasons', "") or ""
             feature_notes = feature_info.get('feature_notes', "") or ""
             derived_features = feature_info.get('derived_features', [])[:4]
             feature_metadata = feature_info.get('feature_metadata', {}) or {}
             feature_context = f"\nFEATURES: {features}\nSCALE: {scale}\nENCODE: {encode}\nDROP: {drop}"
-            if validated_code:
-                feature_context += f"\nVALIDATED_FEATURE_CODE:\n{validated_code}"
             if feature_details:
                 feature_context += f"\nFEATURE_DETAILS: {feature_details[:800]}"
             if feature_reasons:
@@ -439,11 +494,15 @@ class ModelingAgent(Agent):
         sample_lines = text.splitlines()[:3]
         sample = "\n".join(sample_lines) if len(sample_lines) > 1 else ""
 
-        prompt = f"""{Path(path).name} | {rows} rows | {len(headers)} cols
+        prompt = f"""{Path(path).name} | {rows} rows | {len(headers)} cols | FORMAT: {file_format}
             Target: {target or 'auto'}{feature_context}
-            If VALIDATED_FEATURE_CODE is provided, use it to transform the dataset before modeling.
+            From feature_context grab the recomended features, use it to transform the dataset before modeling.
             Use the feature engineering details to choose appropriate preprocessing and models.
-            Prefer simple, robust models for small datasets and use actual column names.
+            Prefer simple, robust models for datasets and use actual column names.
+            CRITICAL: File format is {file_format}. Use CORRECT loader in code!
+            For ARFF: from scipy.io import arff; data, meta = arff.loadarff('data/{Path(path).name}')
+            For CSV: df = pd.read_csv('data/{Path(path).name}')
+            IMPORTANT: Use modern scikit-learn API - avoid deprecated parameters like multi_class.
             SAMPLE:
             {sample[:300]}
 
@@ -472,10 +531,12 @@ class ModelingAgent(Agent):
                 "models": result,
                 "code": ""
             }
-
-        # Fallback: extract code block directly
-        if not result and 'import pandas' in response_text:
+        # Check if result is None or not a dict before trying to check if it's in response_text
+        # Fallback: extract code block directly if JSON extraction failed or returned invalid result
+        if result is None or not isinstance(result, dict):
             print("[INFO] JSON extraction failed, extracting code directly")
+            result = self._extract_code_from_response(response_text)
+        elif not result or not isinstance(result, dict):
             result = self._extract_code_from_response(response_text)
 
         if not result:
@@ -492,6 +553,8 @@ class ModelingAgent(Agent):
         # Fix cutoff issues in code (only if code is not None)
         if code and isinstance(code, str):
             code = self._clean_code(code)
+            # Fix data loading for ARFF vs CSV
+            code = self._fix_data_loader(code, path, is_arff)
 
         # Save code if valid. Accept shorter code if it clearly contains
         # Python constructs (imports, defs, sklearn usage). Log reasons when
@@ -506,7 +569,7 @@ class ModelingAgent(Agent):
             if code_len > 100 or (code_len > 40 and (has_import or has_def or has_sklearn)):
                 accept = True
 
-        if accept:
+        if accept and isinstance(code, str):
             # Unescape the code
             code = code.replace('\\n', '\n').replace('\\t', '\t').replace('\\"', '"')
             code_filename = f"{Path(path).stem}_model.py"
@@ -602,6 +665,38 @@ class ModelingAgent(Agent):
         # Return empty string instead of None to avoid len() errors
         return ""
 
+    def _fix_data_loader(self, code: str, path: str, is_arff: bool) -> str:
+        """Fix the data loading code to match the actual file format."""
+        filename = Path(path).name
+
+        if is_arff:
+            # Replace pd.read_csv with ARFF loader
+            csv_pattern = r"df\s*=\s*pd\.read_csv\(['\"]([^'\"]*)['\"][^)]*\)"
+            arff_code = f"""# Load ARFF file
+            from scipy.io import arff
+            data, meta = arff.loadarff('{filename}')
+            df = pd.DataFrame(data)
+            # Decode bytes to strings for ARFF data
+            for col in df.select_dtypes(include=['object']).columns:
+                try:
+                    if len(df[col]) > 0 and isinstance(df[col].iloc[0], bytes):
+                        df[col] = df[col].str.decode('utf-8')
+                except (IndexError, AttributeError, UnicodeDecodeError):
+                    pass
+                """
+            code = re.sub(csv_pattern, arff_code, code)
+
+            # If no data loading found, add ARFF loader at start
+            if 'arff.loadarff' not in code and 'read_csv' not in code:
+                code = arff_code + "\n\n" + code
+        else:
+            # For CSV, fix the filename to match actual file
+            csv_pattern = r"df\s*=\s*pd\.read_csv\(['\"]([^'\"]*)['\"][^)]*\)"
+            if re.search(csv_pattern, code):
+                code = re.sub(csv_pattern, f"df = pd.read_csv('{filename}')", code)
+
+        return code
+
     def _clean_code(self, code: str) -> str:
         """Clean and fix cutoff issues in code."""
         if not code or not isinstance(code, str):
@@ -631,6 +726,11 @@ class ModelingAgent(Agent):
         if code.strip().endswith('model = RandomForestClassifier('):
             code += ')'
 
+        # Remove deprecated sklearn parameters
+        code = re.sub(r',?\s*multi_class=[\'"]?auto[\'"]?', '', code)
+        code = re.sub(r',?\s*multi_class=\'auto\'', '', code)
+        code = re.sub(r',?\s*multi_class="auto"', '', code)
+
         return code
 
 
@@ -654,88 +754,256 @@ class Manager(Agent):
         use_openml: bool = True,
         model: Optional[str] = None,
     ) -> dict:
-        """Main processing pipeline."""
+        """Main processing pipeline with role separation."""
         print(f"\nProcessing: {path}")
 
+        # Read data
         _, _, _, structure = self._read_file(path)
+
         result = {
             "file": path,
             "task": task,
             "timestamp": __import__('datetime').datetime.now().isoformat(),
-            "pipeline": {}
+            "pipeline": {
+                "domain_analysis": {},
+                "feature_specs": {},
+                "modeling": {},
+                "validation": {},
+            }
         }
 
-        # Check OpenML if enabled
+        # ============================================
+        # 1. DOMAIN EXPERT STAGE
+        # ============================================
+
+        domain_analysis = {}
+        if domain:
+            print(f"\n[Domain Expert] Analyzing domain: {domain}")
+            domain_result = self.domain_agent.analyze(
+                path=path,
+                domain=domain,
+                model=model
+            )
+            domain_analysis = domain_result.get("analysis", {})
+            result["pipeline"]["domain_analysis"] = {
+                "domain": domain,
+                "insights": domain_analysis.get("domain_insights", ""),
+                "key_metrics": domain_analysis.get("key_metrics", []),
+                "business_questions": domain_analysis.get("business_questions", []),
+                "data_quality_issues": domain_analysis.get("data_quality_issues", []),
+                "data_limitations": domain_analysis.get("data_limitations", []),
+                "relevant_context": domain_analysis.get("relevant_context", "")
+            }
+            print(f"  Domain insights extracted")
+            print(f"  Key metrics identified: {len(domain_analysis.get('key_metrics', []))}")
+
+        # ============================================
+        # OPENML CONTEXT
+        # ============================================
+
         if use_openml and self.openml.dataset_index:
-            print("\nChecking similar datasets...")
+            print("\n[OpenML] Checking similar datasets...")
             similar = self.openml.find_similar_datasets(structure, limit=3)
             if similar:
-                print(f"  Found {len(similar)} similar datasets")
-                result["openml_context"] = {
+                result["pipeline"]["domain_analysis"]["openml_context"] = {
                     "similar_count": len(similar),
                     "top_match": similar[0]["dataset"]["name"] if similar else None
                 }
+                print(f"  Found {len(similar)} similar datasets")
 
-        # Feature engineering
-        print("\nFeature engineering...")
-        feature_info = self.feature_agent.analyze(path, target, model)
-        result["pipeline"]["features"] = feature_info
-        print(f"   → {len(feature_info.get('features', []))} features selected")
+        # ============================================
+        # 2. FEATURE ENGINEER STAGE (NO CODE!)
+        # ============================================
 
-        # Feature validation
+        print("\n[Feature Engineer] Designing features...")
+
+        # Feature engineer returns ONLY specifications - NO executable code
+        # This uses the existing analyze() method which does NOT produce code
+        feature_specs = self.feature_agent.analyze(
+            path=path,
+            target=target,
+            model=model
+        )
+
+        # Store feature specifications
+        result["pipeline"]["feature_specs"] = {
+            "features": feature_specs.get("features", []),
+            "scale": feature_specs.get("scale", []),
+            "encode": feature_specs.get("encode", {}),
+            "drop": feature_specs.get("drop", []),
+            "feature_details": feature_specs.get("feature_details", ""),
+            "feature_reasons": feature_specs.get("feature_reasons", ""),
+            "feature_notes": feature_specs.get("feature_notes", ""),
+            "derived_features": feature_specs.get("derived_features", []),
+            "feature_metadata": feature_specs.get("feature_metadata", {})
+        }
+
+        print(f"  Designed {len(feature_specs.get('features', []))} features")
+        print(f"  Will scale: {len(feature_specs.get('scale', []))} columns")
+        print(f"  Will encode: {len(feature_specs.get('encode', {}))} columns")
+        print(f"  Will drop: {len(feature_specs.get('drop', []))} columns")
+
+        # ============================================
+        # 3. MODELING STAGE (Generates code)
+        # ============================================
+
+        print("\n[Model] Generating model code from feature specs...")
+
+        # Modeling agent takes feature specifications and generates executable code
+        modeling_result = self.modeling_agent.generate(
+            path=path,
+            feature_info=feature_specs,  # Pass the specs (NO code inside)
+            problem_type=problem_type,
+            target=target,
+            model=model
+        )
+
+        result["pipeline"]["modeling"] = {
+            "problem_type": modeling_result.get("problem_type"),
+            "target": modeling_result.get("target"),
+            "recommended_models": modeling_result.get("recommended_models", []),
+            "code_path": modeling_result.get("code_path"),
+            "code_generated": modeling_result.get("code_generated", False),
+            "code_preview": modeling_result.get("code_preview", "")
+        }
+
+        print(f"  Problem type: {modeling_result.get('problem_type', 'unknown')}")
+        print(f"  Target: {modeling_result.get('target', 'unknown')}")
+        print(f"  Recommended models: {', '.join(modeling_result.get('recommended_models', []))}")
+        if modeling_result.get('code_generated'):
+            print(f"  Code saved to: {modeling_result.get('code_path')}")
+
+        # ============================================
+        # 4. CAAFE VALIDATOR STAGE (Validates model code)
+        # ============================================
+
+        print("\n[CAAFE Validator] Validating generated model code...")
+
         validation_result = {
             "validated": False,
-            "note": "No feature code available for validation"
+            "stage": "post_modeling",
+            "metrics": {}
         }
-        feature_code = feature_info.get("feature_code", "")
-        if target and feature_code:
-            try:
-                print("\nValidating generated feature code...")
-                df = pd.read_csv(path)
-                validator = CAAFEFeatureValidator(target=target)
-                validator.evaluate_baseline(df)
-                is_improved, score = validator.evaluate_feature(df, feature_code)
+
+        # Only validate if:
+        # 1. Code was generated
+        # 2. We have a target column
+        # 3. The code file exists
+        if modeling_result.get('code_generated') and target:
+            code_path = modeling_result.get('code_path')
+            if code_path and Path(code_path).exists():
+                try:
+                    print("  Loading data for validation...")
+                    # Support both CSV and ARFF files
+                    if path.endswith('.arff'):
+                        try:
+                            from scipy.io import arff
+                            data, meta = arff.loadarff(path)
+                            df = pd.DataFrame(data)
+                            # Decode bytes to strings
+                            for col in df.select_dtypes(include=['object']).columns:
+                                try:
+                                    if df[col].iloc[0] and isinstance(df[col].iloc[0], bytes):
+                                        df[col] = df[col].str.decode('utf-8')
+                                except (IndexError, AttributeError, UnicodeDecodeError):
+                                    pass
+                        except ImportError:
+                            print(f"  [ERROR] scipy required for ARFF support. Install with: pip install scipy")
+                            raise
+                    else:
+                        df = pd.read_csv(path)
+
+                    # Initialize validator
+                    validator = CAAFEFeatureValidator(target=target)
+
+                    # Evaluate baseline performance
+                    print("  Evaluating baseline performance...")
+                    validator.evaluate_baseline(df)
+                    baseline_score = validator.baseline_score
+                    print(f"  Baseline score: {baseline_score:.4f}")
+
+                    # Validate the generated model code
+                    print("  Validating model code...")
+                    is_valid, metrics = validator.validate_model_code(
+                        code_path,
+                        df
+                    )
+
+                    validation_result = {
+                        "validated": is_valid,
+                        "code_path": code_path,
+                        "baseline_score": baseline_score,
+                        "metrics": metrics,
+                        "model_score": metrics.get("score", 0),
+                        "improvement": metrics.get("score", 0) - baseline_score if is_valid else 0.0,
+                        "issues": metrics.get("issues", []),
+                        "warnings": metrics.get("warnings", [])
+                    }
+
+                    if is_valid:
+                        print(f"  Validation PASSED!")
+                        print(f"  Model score: {metrics.get('score', 0):.4f}")
+                        print(f"  Improvement over baseline: {validation_result['improvement']:.4f}")
+                    else:
+                        print(f"  Validation FAILED")
+                        if validation_result.get("issues"):
+                            print(f"  Issues: {len(validation_result['issues'])}")
+
+                except Exception as e:
+                    validation_result = {
+                        "validated": False,
+                        "error": str(e),
+                        "stage": "validation_error"
+                    }
+                    print(f"  Validation error: {e}")
+            else:
                 validation_result = {
-                    "validated": is_improved,
-                    "feature_code": feature_code,
-                    "score": score,
-                    "improvement": score - validator.baseline_score if is_improved else 0.0
+                    "validated": False,
+                    "note": "Code file not found",
+                    "stage": "file_not_found"
                 }
-                feature_info["validated_feature_code"] = feature_code if is_improved else ""
-                print(f"   → Feature validation passed: {is_improved}")
-            except Exception as e:
-                validation_result = {"validated": False, "error": str(e)}
-                print(f"   → Feature validation error: {e}")
+                print("  Code file not found for validation")
+        else:
+            if not modeling_result.get('code_generated'):
+                validation_result["note"] = "No code generated for validation"
+                print("  No code generated - skipping validation")
+            elif not target:
+                validation_result["note"] = "No target column specified for validation"
+                print("  No target column - skipping validation")
 
-        result["pipeline"]["feature_validation"] = validation_result
+        result["pipeline"]["validation"] = validation_result
 
-        # Modeling
-        print("\nModel generation...")
-        modeling_result = self.modeling_agent.generate(
-            path, feature_info, problem_type, target, model
-        )
-        result["pipeline"]["modeling"] = modeling_result
-        print(f"   → Problem type: {modeling_result.get('problem_type', 'unknown')}")
-        print(f"   → Target: {modeling_result.get('target', 'unknown')}")
-        print(f"   → Models: {', '.join(modeling_result.get('recommended_models', []))}")
+        # ============================================
 
-        # Summary
         result["summary"] = {
-            "features_count": len(feature_info.get('features', [])),
+            "features_count": len(feature_specs.get('features', [])),
             "problem_type": modeling_result.get('problem_type'),
             "target": modeling_result.get('target'),
             "code_generated": modeling_result.get('code_generated', False),
-            "models": modeling_result.get('recommended_models', [])
+            "models": modeling_result.get('recommended_models', []),
+            "validation_passed": validation_result.get('validated', False),
+            "improvement": validation_result.get('improvement') if validation_result.get('validated') else None
         }
 
-        # Domain analysis if domain provided
-        if domain:
-            print(f"\n Adding domain context: {domain}")
-            result["domain_context"] = {"domain": domain, "note": "Domain expert analysis available if needed"}
+        # Print final summary
+        print(f"\n{'='*60}")
+        print(f" Pipeline Complete!")
+        print(f"{'='*60}")
+        print(f"  Features designed: {len(feature_specs.get('features', []))}")
+        print(f"  Problem type: {modeling_result.get('problem_type', 'unknown')}")
+        print(f"  Models: {', '.join(modeling_result.get('recommended_models', []))}")
 
-        print(f"\n Pipeline complete!")
+        if modeling_result.get('code_generated'):
+            print(f"  Code generated: {modeling_result['code_path']}")
+
+        if validation_result.get('validated'):
+            print(f"  Validation passed with improvement: {validation_result['improvement']:.4f}")
+        elif validation_result.get('note'):
+            print(f"  Validation: {validation_result['note']}")
+
         if modeling_result.get('code_path'):
-            print(f" Ready to run: python {modeling_result['code_path']}")
+            print(f"\n   Run: python {modeling_result['code_path']}")
+        print(f"{'='*60}")
 
         return result
 

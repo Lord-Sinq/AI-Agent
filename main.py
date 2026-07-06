@@ -14,11 +14,13 @@ load_dotenv()
 
 
 def get_files(data_dir: str = "data") -> list:
-    """Get all CSV files from data directory."""
+    """Get all CSV and ARFF files from data directory."""
     path = Path(data_dir)
     if not path.exists():
         return []
-    return sorted([f.name for f in path.iterdir() if f.is_file() and not f.name.startswith('.')])
+    return sorted([f.name for f in path.iterdir()
+                   if f.is_file() and f.suffix.lower() in ['.csv', '.arff']
+                   and not f.name.startswith('.')])
 
 
 def pick_file(data_dir: str = "data") -> str:
@@ -64,13 +66,13 @@ def parse_args():
         description="AI-Agent CLI - Data Science Pipeline",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Examples:
-  python main.py                                    # Interactive mode
-  python main.py -f data/sales.csv -d retail       # Specify file and domain
-  python main.py --save-responses                  # Enable response saving
-  python main.py --list-deployments                # List Azure models
-  python main.py --quiet --no-openml               # Silent mode, no OpenML
-        """
+        Examples:
+        python main.py                                    # Interactive mode
+        python main.py -f data/sales.csv -d retail       # Specify file and domain
+        python main.py --save-responses                  # Enable response saving
+        python main.py --list-deployments                # List Azure models
+        python main.py --quiet --no-openml               # Silent mode, no OpenML
+                """
     )
 
     p.add_argument("-f", "--file", help="Path to CSV file")

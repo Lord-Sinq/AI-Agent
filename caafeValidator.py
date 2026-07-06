@@ -180,6 +180,67 @@ class CAAFEFeatureValidator:
             print(f"[WARNING] Feature evaluation failed: {e}")
             return False, self.current_score
 
+    def validate_model_code(self, code_path: str, df: pd.DataFrame) -> Tuple[bool, Dict[str, Any]]:
+        """
+        Validate generated model code by executing it and extracting a score.
+
+        Args:
+            code_path: Path to the generated Python model file.
+            df: DataFrame used for validation.
+
+        Returns:
+            Tuple of validation success and metrics dictionary.
+        """
+        if self.target not in df.columns:
+            raise ValueError(f"Target column '{self.target}' not found in dataframe")
+
+        code_file = Path(code_path)
+        if not code_file.exists():
+            raise FileNotFoundError(f"Generated code file not found: {code_path}")
+
+        try:
+            code = code_file.read_text()
+            exec_globals = {
+                '__builtins__': {
+                    'range': range,
+                    'len': len,
+                    'min': min,
+                    'max': max,
+                    'sum': sum,
+                    'print': print,
+                },
+                'pd': pd,
+                'np': np,
+            }
+            exec_locals = {'df': df.copy()}
+            exec(code, exec_globals, exec_locals)
+
+            score = None
+            if 'score' in exec_locals:
+                score = float(exec_locals['score'])
+            elif 'y_pred' in exec_locals and 'y_test' in exec_locals:
+                from sklearn.metrics import accuracy_score
+                score = float(accuracy_score(exec_locals['y_test'], exec_locals['y_pred']))
+            elif 'pipe' in exec_locals and 'X_test' in exec_locals and 'y_test' in exec_locals:
+                from sklearn.metrics import accuracy_score
+                y_pred = exec_locals['pipe'].predict(exec_locals['X_test'])
+                score = float(accuracy_score(exec_locals['y_test'], y_pred))
+            else:
+                score = self.baseline_score
+
+            metrics = {
+                'score': score,
+                'issues': [],
+                'warnings': []
+            }
+            return True, metrics
+        except Exception as e:
+            return False, {
+                'score': 0.0,
+                'issues': [str(e)],
+                'warnings': []
+            }
+
     @staticmethod
     def is_safe_code(code: str) -> bool:
         """
