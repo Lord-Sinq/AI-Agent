@@ -272,7 +272,7 @@ class FeatureEngineerAgent(Agent):
             Example output:
                 {{"features":["age","salary"],"scale":["age"],"encode":{{"gender":"label"}},"drop":["customer_id"],"feature_details":"Scale numeric columns and label encode gender.","derived_features":["age_squared"],"feature_metadata":{{"reason":"high correlation with churn"}}}}"""
 
-        resp = self.llm.generate(prompt, model=model, max_tokens=800)
+        resp = self.llm.generate(prompt, model=model, max_tokens=800, agent="Feature")
         raw_response = resp.get("text", "")
         recommendations = self._normalize_feature_recommendations(self._extract_json(raw_response), headers, data_types, target)
         feature_details = self._summarize_response(raw_response)
@@ -517,7 +517,7 @@ class ModelingAgent(Agent):
             YOUR JSON:"""
 
         # Use 6000 tokens to avoid timeout
-        resp = self.llm.generate(prompt, model=model, max_tokens=6000)
+        resp = self.llm.generate(prompt, model=model, max_tokens=6000, agent="Modeling")
         response_text = resp.get("text", "")
 
         # Extract JSON

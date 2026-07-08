@@ -25,8 +25,9 @@ class LLMManager:
         self.strict_json_mode = os.getenv("STRICT_JSON_MODE", "true").lower() == "true"
 
         if self.save_responses:
-            self.responses_dir = Path.cwd() / "responses"
-            self.responses_dir.mkdir(exist_ok=True)
+            date_dir = datetime.now().strftime(f"%Y-%m-%d")
+            self.responses_dir = Path.cwd() / "responses" / date_dir
+            self.responses_dir.mkdir(parents=True, exist_ok=True)
             print(f"[INFO] Responses will be saved to: {self.responses_dir}")
 
         print(f"[INFO] Endpoint: {self.azure_endpoint}")
@@ -61,13 +62,14 @@ class LLMManager:
         else:
             return "You are a helpful assistant that provides accurate information."
 
-    def _save_response(self, prompt: str, response: dict, model: str, max_tokens: int) -> None:
+    def _save_response(self, prompt: str, response: dict, model: Optional[str], max_tokens: int, agent: str) -> None:
         if not self.save_responses:
             return
 
+        model = model or "unknown_model"
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
         prompt_preview = prompt[:50].replace(" ", "_").replace("\n", "").replace("/", "_")
-        filename = f"{timestamp}_{model}_{prompt_preview}.json"
+        filename = f"{timestamp}_{agent}_{model}_{prompt_preview}.json"
         filepath = self.responses_dir / filename
 
         # Also save the raw response text separately for debugging
@@ -77,6 +79,7 @@ class LLMManager:
         response_data = {
             "timestamp": datetime.now().isoformat(),
             "model": model,
+            "agent": agent,
             "max_completion_tokens": max_tokens,
             "prompt_length": len(prompt),
             "prompt_preview": prompt[:200] + "..." if len(prompt) > 200 else prompt,
@@ -92,8 +95,9 @@ class LLMManager:
         except Exception as e:
             print(f"[WARNING] Failed to save response: {e}")
 
-    def generate(self, prompt: str, model: Optional[str] = None, provider: Optional[str] = None, max_tokens: int = 4000) -> dict:
+    def generate(self, prompt: str, model: Optional[str] = None, provider: Optional[str] = None, max_tokens: int = 4000, agent: Optional[str] = None) -> dict:
         model = model or self.azure_deployment_name
+        agent = agent or ""
 
         if provider is None:
             if self.azure_endpoint and self.azure_api_key and self.azure_deployment_name:
@@ -163,7 +167,7 @@ class LLMManager:
                 print(f"[INFO] Generated {len(text)} chars")
                 response = {"text": text, "raw": j}
 
-                self._save_response(prompt, response, model, max_tokens)
+                self._save_response(prompt, response, model, max_tokens, agent)
                 return response
 
             except requests.exceptions.RequestException as e:
