@@ -2,6 +2,7 @@
 Agent Module for LLM-Powered Data Science Pipeline
 """
 
+import ast
 import csv
 import io
 import json
@@ -734,6 +735,187 @@ class ModelingAgent(Agent):
         return code
 
 
+class CodeValidationAgent(Agent):
+    """Code validation agent for generated model code."""
+
+    def validate_code(
+        self,
+        code_path: str,
+        data_path: str,
+        target: Optional[str] = None,
+        problem_type: Optional[str] = None
+    ) -> dict:
+        result = {
+            "code_path": code_path,
+            "syntax_ok": False,
+            "executed": False,
+            "score": None,
+            "baseline_score": None,
+            "improvement": None,
+            "improved": None,
+            "issues": [],
+            "warnings": [],
+            "notes": []
+        }
+
+        code_file = Path(code_path)
+        if not code_file.exists():
+            result["issues"].append("Code file not found")
+            return result
+
+        try:
+            code = code_file.read_text()
+        except Exception as e:
+            result["issues"].append(f"Unable to read code file: {e}")
+            return result
+
+        if not code.strip():
+            result["issues"].append("Code file is empty")
+            return result
+
+        if not CAAFEFeatureValidator.is_safe_code(code):
+            result["issues"].append("Code failed safety checks")
+            return result
+
+        try:
+            ast.parse(code)
+            result["syntax_ok"] = True
+        except SyntaxError as e:
+            result["issues"].append(f"SyntaxError: {e}")
+            return result
+
+        try:
+            df = self._load_data(data_path)
+        except Exception as e:
+            result["issues"].append(f"Data loading failed: {e}")
+            return result
+
+        if target:
+            try:
+                validator = CAAFEFeatureValidator(target=target)
+                result["baseline_score"] = validator.evaluate_baseline(df.copy())
+            except Exception as e:
+                result["warnings"].append(f"Baseline evaluation skipped: {e}")
+
+        safe_builtins = {
+            'abs': abs,
+            'all': all,
+            'any': any,
+            'dict': dict,
+            'float': float,
+            'int': int,
+            'len': len,
+            'list': list,
+            'max': max,
+            'min': min,
+            'print': print,
+            'range': range,
+            'set': set,
+            'str': str,
+            'sum': sum,
+            'tuple': tuple,
+            '__import__': __import__
+        }
+
+        exec_globals = {
+            '__builtins__': safe_builtins,
+            'pd': pd,
+            'np': __import__('numpy')
+        }
+        exec_locals = {
+            'df': df.copy()
+        }
+
+        try:
+            exec(code, exec_globals, exec_locals)
+            result["executed"] = True
+        except Exception as e:
+            result["issues"].append(f"Execution error: {e}")
+            return result
+
+        metrics = self._extract_result_metrics(exec_locals, target, problem_type)
+        result.update(metrics)
+
+        if result.get("score") is not None and result.get("baseline_score") is not None:
+            result["improvement"] = result["score"] - result["baseline_score"]
+            result["improved"] = result["improvement"] > 0
+
+        return result
+
+    @staticmethod
+    def _load_data(path: str) -> pd.DataFrame:
+        if path.endswith('.arff'):
+            try:
+                from scipy.io import arff
+            except ImportError:
+                raise ImportError("scipy is required for ARFF support")
+            data, meta = arff.loadarff(path)
+            df = pd.DataFrame(data)
+            for col in df.select_dtypes(include=['object']).columns:
+                try:
+                    if len(df[col]) > 0 and isinstance(df[col].iloc[0], bytes):
+                        df[col] = df[col].str.decode('utf-8')
+                except (IndexError, AttributeError, UnicodeDecodeError):
+                    pass
+            return df
+
+        return pd.read_csv(path)
+
+    @staticmethod
+    def _extract_result_metrics(exec_locals: dict, target: Optional[str], problem_type: Optional[str]) -> dict:
+        score = None
+        warnings: List[str] = []
+        issues: List[str] = []
+
+        if 'score' in exec_locals:
+            try:
+                score = float(exec_locals['score'])
+            except Exception as e:
+                warnings.append(f"Unable to parse score: {e}")
+
+        elif 'y_pred' in exec_locals and 'y_test' in exec_locals:
+            try:
+                from sklearn.metrics import accuracy_score, mean_squared_error, r2_score
+                y_test = exec_locals['y_test']
+                y_pred = exec_locals['y_pred']
+                if problem_type == 'regression':
+                    score = r2_score(y_test, y_pred)
+                else:
+                    score = accuracy_score(y_test, y_pred)
+            except Exception as e:
+                issues.append(f"Unable to evaluate predictions: {e}")
+
+        elif 'pipe' in exec_locals and 'X_test' in exec_locals and 'y_test' in exec_locals:
+            try:
+                from sklearn.metrics import accuracy_score, mean_squared_error, r2_score
+                y_test = exec_locals['y_test']
+                y_pred = exec_locals['pipe'].predict(exec_locals['X_test'])
+                if problem_type == 'regression':
+                    score = r2_score(y_test, y_pred)
+                else:
+                    score = accuracy_score(y_test, y_pred)
+            except Exception as e:
+                issues.append(f"Unable to evaluate pipeline: {e}")
+
+        elif 'model' in exec_locals and 'X_test' in exec_locals and 'y_test' in exec_locals:
+            try:
+                from sklearn.metrics import accuracy_score, mean_squared_error, r2_score
+                y_test = exec_locals['y_test']
+                y_pred = exec_locals['model'].predict(exec_locals['X_test'])
+                if problem_type == 'regression':
+                    score = r2_score(y_test, y_pred)
+                else:
+                    score = accuracy_score(y_test, y_pred)
+            except Exception as e:
+                issues.append(f"Unable to evaluate model predictions: {e}")
+
+        return {
+            'score': score,
+            'warnings': warnings,
+            'issues': issues
+        }
+
+
 class Manager(Agent):
     """Main orchestrator."""
 
@@ -743,6 +925,7 @@ class Manager(Agent):
         self.domain_agent = DomainExpertAgent(llm_manager)
         self.feature_agent = FeatureEngineerAgent(llm_manager)
         self.modeling_agent = ModelingAgent(llm_manager)
+        self.code_validation_agent = CodeValidationAgent(llm_manager)
 
     def process(
         self,
@@ -768,6 +951,7 @@ class Manager(Agent):
                 "domain_analysis": {},
                 "feature_specs": {},
                 "modeling": {},
+                "code_validation": {},
                 "validation": {},
             }
         }
@@ -874,9 +1058,39 @@ class Manager(Agent):
             print(f"  Code saved to: {modeling_result.get('code_path')}")
 
         # ============================================
-        # 4. CAAFE VALIDATOR STAGE (Validates model code)
+        # 4. CODE VALIDATION AGENT STAGE (Check generated code and run it)
         # ============================================
+        print("\n[Code Validation Agent] Checking generated code execution and results...")
+        code_validation_result = {}
+        code_path = modeling_result.get('code_path')
+        if modeling_result.get('code_generated') and code_path:
+            code_validation_result = self.code_validation_agent.validate_code(
+                code_path=str(code_path),
+                data_path=path,
+                target=target,
+                problem_type=problem_type
+            )
+            print(f"  Syntax OK: {code_validation_result.get('syntax_ok')}")
+            print(f"  Executed: {code_validation_result.get('executed')}")
+            if code_validation_result.get('score') is not None:
+                print(f"  Validation score: {code_validation_result.get('score'):.4f}")
+            if code_validation_result.get('baseline_score') is not None:
+                print(f"  Baseline score: {code_validation_result.get('baseline_score'):.4f}")
+            issues = code_validation_result.get('issues') or []
+            if issues:
+                print(f"  Issues: {len(issues)}")
+        else:
+            code_validation_result = {
+                "executed": False,
+                "issues": ["No code generated or code path missing"],
+                "notes": ["Skipped code validation"]
+            }
+            print("  No generated code available for validation")
 
+        result["pipeline"]["code_validation"] = code_validation_result
+
+        # ============================================
+        # 5. CAAFE VALIDATOR STAGE (Validates model code)
         print("\n[CAAFE Validator] Validating generated model code...")
 
         validation_result = {
