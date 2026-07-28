@@ -5,10 +5,11 @@ AI-Agent CLI - Data Science Pipeline with Code Generation
 import argparse
 import json
 import os
+import time
 from pathlib import Path
 from dotenv import load_dotenv
 from llms import LLMManager
-from agent import Manager
+from manager import Manager
 
 load_dotenv()
 
@@ -155,6 +156,7 @@ def print_summary(result):
 
 def main():
     """Main entry point."""
+    start_time = time.time()
     args = parse_args()
 
     if args.list_deployments:
@@ -244,7 +246,16 @@ def main():
 
         # Show response save location
         if os.getenv("SAVE_RESPONSES") == "true" and hasattr(llm, 'responses_dir'):
+            print("\n" + "=" * 60)
             print(f"\nResponses saved to: {llm.responses_dir}")
+
+        print("\n" + "=" * 60)
+        print("Time")
+        print("=" * 60)
+        elapsed = time.time() - start_time
+        print(f"\nTotal runtime: {elapsed:.2f} seconds")
+        print("\n" + "=" * 60)
+        print('\n\n\n')
 
     except Exception as e:
         print(f"\n Error: {e}")

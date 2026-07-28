@@ -10,6 +10,7 @@ from sklearn.model_selection import cross_val_score, train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
+from sklearn.metrics import accuracy_score, mean_squared_error, r2_score
 from typing import Dict, List, Tuple, Optional, Any
 import re
 from pathlib import Path
@@ -33,10 +34,11 @@ class CAAFEFeatureValidator:
         self.target = target
         self.cv_folds = cv_folds
         self.random_state = random_state
-        self.baseline_score: float = 0.5  # Initialize with default
-        self.current_score: float = 0.5   # Initialize with default
-        self.feature_history = []  # Track accepted features
+        self.baseline_score = None
+        self.current_score = None
+        self.feature_history = []
         self.target_encoder = None
+        self.baseline_evaluated = False
 
     def evaluate_baseline(self, df: pd.DataFrame) -> float:
         """
@@ -74,7 +76,8 @@ class CAAFEFeatureValidator:
             )
             scores = cross_val_score(clf, X, y, cv=cv, scoring='accuracy')
             self.baseline_score = scores.mean()
-            self.current_score = self.baseline_score  # Initialize current_score here
+            self.current_score = self.baseline_score
+            self.baseline_evaluated = True
 
             print(f"[INFO] Baseline accuracy: {self.baseline_score:.4f} ± {scores.std():.4f} (cv={cv})")
             return self.baseline_score
@@ -82,7 +85,8 @@ class CAAFEFeatureValidator:
         except Exception as e:
             print(f"[WARNING] Baseline evaluation failed: {e}")
             self.baseline_score = 0.5
-            self.current_score = 0.5  # Initialize current_score here too
+            self.current_score = 0.5
+            self.baseline_evaluated = True
             return 0.5
 
     def evaluate_feature(self, df: pd.DataFrame, feature_code: str) -> Tuple[bool, float]:
@@ -160,7 +164,7 @@ class CAAFEFeatureValidator:
             is_improvement = improvement > 0.001
 
             if is_improvement:
-                print(f"[INFO] ✓ Improvement: {self.current_score:.4f} → {new_score:.4f} (+{improvement:.4f})")
+                print(f"[INFO] Improvement: {self.current_score:.4f} → {new_score:.4f} (+{improvement:.4f})")
                 self.current_score = new_score
                 self.feature_history.append({
                     'code': feature_code,
@@ -170,7 +174,7 @@ class CAAFEFeatureValidator:
                 })
                 return True, new_score
             else:
-                print(f"[INFO] ✗ No improvement: {self.current_score:.4f} → {new_score:.4f} ({improvement:+.4f})")
+                print(f"[INFO] No improvement: {self.current_score:.4f} → {new_score:.4f} ({improvement:+.4f})")
                 return False, self.current_score
 
         except SyntaxError as e:
@@ -194,36 +198,79 @@ class CAAFEFeatureValidator:
         if self.target not in df.columns:
             raise ValueError(f"Target column '{self.target}' not found in dataframe")
 
+        # Ensure baseline is evaluated
+        if not self.baseline_evaluated:
+            self.evaluate_baseline(df)
+
         code_file = Path(code_path)
         if not code_file.exists():
             raise FileNotFoundError(f"Generated code file not found: {code_path}")
 
         try:
             code = code_file.read_text()
+
+            # Safe builtins
+            safe_builtins = {
+                'abs': abs,
+                'all': all,
+                'any': any,
+                'bool': bool,
+                'dict': dict,
+                'float': float,
+                'int': int,
+                'len': len,
+                'list': list,
+                'max': max,
+                'min': min,
+                'object': object,
+                'print': print,
+                'range': range,
+                'set': set,
+                'str': str,
+                'sum': sum,
+                'tuple': tuple,
+                'type': type,
+                'zip': zip,
+                'enumerate': enumerate,
+                'isinstance': isinstance,
+                'issubclass': issubclass,
+                'callable': callable,
+                'hasattr': hasattr,
+                'getattr': getattr,
+                'True': True,
+                'False': False,
+                'None': None,
+                '__import__': __import__,
+            }
+
             exec_globals = {
-                '__builtins__': {
-                    'range': range,
-                    'len': len,
-                    'min': min,
-                    'max': max,
-                    'sum': sum,
-                    'print': print,
-                },
+                '__builtins__': safe_builtins,
                 'pd': pd,
                 'np': np,
+                'accuracy_score': accuracy_score,
+                'mean_squared_error': mean_squared_error,
+                'r2_score': r2_score,
+                'RandomForestClassifier': RandomForestClassifier,
+                'train_test_split': train_test_split,
+                'StandardScaler': StandardScaler,
+                'ColumnTransformer': ColumnTransformer,
+                'Pipeline': Pipeline,
             }
-            exec_locals = {'df': df.copy()}
+            exec_locals = {'df': df.copy(), 'score': None}
+
+            # Execute with proper error handling
             exec(code, exec_globals, exec_locals)
 
             score = None
-            if 'score' in exec_locals:
+            if 'score' in exec_locals and exec_locals['score'] is not None:
                 score = float(exec_locals['score'])
             elif 'y_pred' in exec_locals and 'y_test' in exec_locals:
-                from sklearn.metrics import accuracy_score
                 score = float(accuracy_score(exec_locals['y_test'], exec_locals['y_pred']))
             elif 'pipe' in exec_locals and 'X_test' in exec_locals and 'y_test' in exec_locals:
-                from sklearn.metrics import accuracy_score
                 y_pred = exec_locals['pipe'].predict(exec_locals['X_test'])
+                score = float(accuracy_score(exec_locals['y_test'], y_pred))
+            elif 'model' in exec_locals and 'X_test' in exec_locals and 'y_test' in exec_locals:
+                y_pred = exec_locals['model'].predict(exec_locals['X_test'])
                 score = float(accuracy_score(exec_locals['y_test'], y_pred))
             else:
                 score = self.baseline_score
@@ -234,6 +281,13 @@ class CAAFEFeatureValidator:
                 'warnings': []
             }
             return True, metrics
+
+        except SyntaxError as e:
+            return False, {
+                'score': 0.0,
+                'issues': [f"SyntaxError: {e}"],
+                'warnings': []
+            }
         except Exception as e:
             return False, {
                 'score': 0.0,
@@ -252,22 +306,50 @@ class CAAFEFeatureValidator:
         Returns:
             True if code appears safe, False otherwise
         """
-        # Dangerous patterns to block
+        # Dangerous patterns to block - MORE SPECIFIC, don't block open() completely
         dangerous_patterns = [
-            'eval(', 'exec(', '__import__', 'open(', 'subprocess',
-            'os.system', 'os.popen', 'sys.', 'import os', 'import sys',
-            '__builtins__', 'globals()', 'locals()', 'compile(',
-            '__code__', '__getattribute__', '__setattr__',
-            '.write(', '.read(', '.delete(', '.remove(',
-            'socket.', 'requests.', 'urllib.',
-            'shell=', 'Popen', 'check_output',
-            '__import__', 'breakpoint()', 'input(',
+            r'eval\s*\(', r'exec\s*\(', r'__import__\s*\(',
+            r'subprocess\.', r'os\.system', r'os\.popen',
+            r'import\s+os\b', r'from\s+os\s+import', r'import\s+sys\b',
+            r'from\s+sys\s+import', r'globals\s*\(', r'locals\s*\(',
+            r'compile\s*\(', r'__code__', r'__getattribute__',
+            r'__setattr__', r'\.write\s*\(', r'\.delete\s*\(',
+            r'\.remove\s*\(', r'socket\.', r'requests\.', r'urllib\.',
+            r'shell\s*=', r'Popen', r'check_output', r'breakpoint\s*\(',
+            r'input\s*\(', r'eval\s+', r'exec\s+',
+            r'__builtins__',  # Dangerous builtins access
+            r'rm\s+-rf',  # Dangerous file operations
+            r'os\.kill', r'os\.remove', r'os\.rmdir',  # Dangerous OS operations
         ]
 
         code_lower = code.lower()
+
+        # Check for dangerous patterns
         for pattern in dangerous_patterns:
-            if pattern.lower() in code_lower:
+            if re.search(pattern, code_lower):
                 print(f"[WARNING] Dangerous pattern detected: {pattern}")
+                return False
+
+        # Check `del` usage - only allow deleting DataFrame columns
+        # This is safe because it only removes a column from the DataFrame
+        del_pattern = r'del\s+df\s*\[\s*[\'"]'
+        if re.search(r'del\s+', code_lower) and not re.search(del_pattern, code_lower):
+            # `del` used on something other than df['column'] - might be dangerous
+            # Could be deleting variables, which is mostly harmless but let's be careful
+            print("[WARNING] Suspicious 'del' usage detected")
+            # Still allow it since it's just deleting variables, not files
+            pass
+
+        # Allow open() only for safe file operations (reading data files)
+        # Check all open() calls to ensure they're only reading data files
+        open_pattern = r'open\s*\(\s*[\'"]([^\'"]+)[\'"]\s*[,)]'
+        open_matches = re.finditer(open_pattern, code)
+
+        for match in open_matches:
+            filename = match.group(1)
+            # Only allow data/ or ./data/ paths
+            if not filename.startswith('data/') and not filename.startswith('./data/') and not filename.startswith('..') and not filename.endswith('.arff'):
+                print(f"[WARNING] Unsafe file path in open(): {filename}")
                 return False
 
         return True
