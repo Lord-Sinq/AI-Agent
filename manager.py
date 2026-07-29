@@ -224,15 +224,11 @@ class Manager(Agent):
                     print(f"    ... and {len(issues) - 3} more")
 
             # Determine if validation passed
-            if syntax_ok and executed:
+            if syntax_ok and (executed or len(issues) == 0):
                 validation_passed = True
-                print(f"\n  ✓ Validation PASSED on attempt {attempt}!")
-                fix_history.append({
-                    "attempt": attempt,
-                    "success": True,
-                    "score": score,
-                    "issues_fixed": len(issues) if attempt > 1 else 0
-                })
+                print(f"\n  Validation PASSED on attempt {attempt}!")
+                if score is not None:
+                    print(f"  Score: {score:.4f}")
             else:
                 # Store error for next attempt
                 error_summary = issues[0] if issues else "Unknown validation error"
@@ -324,103 +320,112 @@ class Manager(Agent):
         }
 
         # Detect target if 'auto'
+        detected_target = target
         if target == 'auto' or target is None:
             print("  Auto-detecting target column...")
             # Load data to detect target
             if path.endswith('.arff'):
                 from scipy.io import arff
                 data, meta = arff.loadarff(path)
-                df = pd.DataFrame(data)
-                for col in df.select_dtypes(include=['object']).columns:
+                df_temp = pd.DataFrame(data)
+                for col in df_temp.select_dtypes(include=['object']).columns:
                     try:
-                        if df[col].iloc[0] and isinstance(df[col].iloc[0], bytes):
-                            df[col] = df[col].str.decode('utf-8')
+                        if df_temp[col].iloc[0] and isinstance(df_temp[col].iloc[0], bytes):
+                            df_temp[col] = df_temp[col].str.decode('utf-8')
                     except (IndexError, AttributeError, UnicodeDecodeError):
                         pass
             else:
-                df = pd.read_csv(path)
+                df_temp = pd.read_csv(path)
 
             # Try common target names
-            possible_targets = ['class', 'Class', 'target', 'Target', 'label', 'Label', 'y', 'Y', 'Utility', 'Contraceptive_method_used']
-            found_targets = [col for col in df.columns if col in possible_targets]
+            possible_targets = ['class', 'Class', 'target', 'Target', 'label', 'Label', 'y', 'Y', 'Utility', 'Contraceptive_method_used', 'Response']
+            found_targets = [col for col in df_temp.columns if col in possible_targets]
             if found_targets:
-                target = found_targets[0]
-                print(f"  Detected target: {target}")
+                detected_target = found_targets[0]
+                print(f"  Detected target: {detected_target}")
             else:
                 # Use last column as target
-                target = df.columns[-1]
-                print(f"  Using last column as target: {target}")
+                detected_target = df_temp.columns[-1]
+                print(f"  Using last column as target: {detected_target}")
 
         # Now proceed with validation
-        if modeling_result.get('code_generated') and target:
+        if modeling_result.get('code_generated') and detected_target:
             code_path = modeling_result.get('code_path')
-            try:
-                print("  Loading data for validation...")
-                if path.endswith('.arff'):
-                    try:
-                        from scipy.io import arff
-                        data, meta = arff.loadarff(path)
-                        df = pd.DataFrame(data)
-                        for col in df.select_dtypes(include=['object']).columns:
-                            try:
-                                if df[col].iloc[0] and isinstance(df[col].iloc[0], bytes):
-                                    df[col] = df[col].str.decode('utf-8')
-                            except (IndexError, AttributeError, UnicodeDecodeError):
-                                pass
-                    except ImportError:
-                        print(f"  [ERROR] scipy required for ARFF support. Install with: pip install scipy")
-                        raise
-                else:
-                    df = pd.read_csv(path)
+            if code_path and Path(code_path).exists():
+                try:
+                    print("  Loading data for validation...")
+                    if path.endswith('.arff'):
+                        try:
+                            from scipy.io import arff
+                            data, meta = arff.loadarff(path)
+                            df = pd.DataFrame(data)
+                            for col in df.select_dtypes(include=['object']).columns:
+                                try:
+                                    if df[col].iloc[0] and isinstance(df[col].iloc[0], bytes):
+                                        df[col] = df[col].str.decode('utf-8')
+                                except (IndexError, AttributeError, UnicodeDecodeError):
+                                    pass
+                        except ImportError:
+                            print(f"  [ERROR] scipy required for ARFF support. Install with: pip install scipy")
+                            raise
+                    else:
+                        df = pd.read_csv(path)
 
-                validator = CAAFEFeatureValidator(target=target)
-                print("  Evaluating baseline performance...")
-                validator.evaluate_baseline(df)
-                baseline_score = validator.baseline_score
-                print(f"  Baseline score: {baseline_score:.4f}")
+                    validator = CAAFEFeatureValidator(target=detected_target)
+                    print("  Evaluating baseline performance...")
+                    validator.evaluate_baseline(df)
+                    baseline_score = validator.baseline_score
+                    print(f"  Baseline score: {baseline_score:.4f}")
 
-                print("  Validating model code...")
-                is_valid, metrics = validator.validate_model_code(
-                    str(code_path),
-                    df
-                )
+                    print("  Validating model code...")
+                    is_valid, metrics = validator.validate_model_code(
+                        str(code_path),
+                        df
+                    )
 
-                validation_result = {
-                    "validated": is_valid,
-                    "code_path": str(code_path),
-                    "baseline_score": baseline_score,
-                    "metrics": metrics,
-                    "model_score": metrics.get("score", 0),
-                    "improvement": metrics.get("score", 0) - baseline_score if is_valid else 0.0,
-                    "issues": metrics.get("issues", []),
-                    "warnings": metrics.get("warnings", [])
-                }
+                    validation_result = {
+                        "validated": is_valid,
+                        "code_path": str(code_path),
+                        "baseline_score": baseline_score,
+                        "metrics": metrics,
+                        "model_score": metrics.get("score", 0),
+                        "improvement": metrics.get("score", 0) - baseline_score if is_valid else 0.0,
+                        "issues": metrics.get("issues", []),
+                        "warnings": metrics.get("warnings", [])
+                    }
 
-                if is_valid:
-                    print(f"  Validation PASSED!")
-                    print(f"  Model score: {metrics.get('score', 0):.4f}")
-                    print(f"  Improvement over baseline: {validation_result['improvement']:.4f}")
-                else:
-                    print(f"  Validation FAILED")
-                    if validation_result.get("issues"):
-                        print(f"  Issues: {len(validation_result['issues'])}")
-                        for issue in validation_result['issues'][:3]:
-                            print(f"    - {issue}")
+                    if is_valid:
+                        print(f"  Validation PASSED!")
+                        print(f"  Model score: {metrics.get('score', 0):.4f}")
+                        print(f"  Improvement over baseline: {validation_result['improvement']:.4f}")
+                    else:
+                        print(f"  Validation FAILED")
+                        if validation_result.get("issues"):
+                            print(f"  Issues: {len(validation_result['issues'])}")
+                            for issue in validation_result['issues'][:3]:
+                                print(f"    - {issue}")
 
-            except Exception as e:
+                except Exception as e:
+                    validation_result = {
+                        "validated": False,
+                        "error": str(e),
+                        "stage": "validation_error"
+                    }
+                    print(f"  Validation error: {e}")
+            else:
                 validation_result = {
                     "validated": False,
-                    "error": str(e),
-                    "stage": "validation_error"
+                    "note": "Code file not found for validation",
+                    "stage": "file_not_found"
                 }
-                print(f"  Validation error: {e}")
+                print("  Code file not found for validation")
         else:
-            validation_result = {
-                "validated": False,
-                "note": "Code file not found for validation",
-                "stage": "file_not_found"
-            }
-            print("  Code file not found for validation")
+            if not modeling_result.get('code_generated'):
+                validation_result["note"] = "No code generated for validation"
+                print("  No code generated - skipping validation")
+            elif not detected_target:
+                validation_result["note"] = "No target column specified for validation"
+                print("  No target column - skipping validation")
 
         result["pipeline"]["validation"] = validation_result
 

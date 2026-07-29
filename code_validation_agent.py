@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import sklearn
-from sklearn.metrics import accuracy_score, mean_squared_error, r2_score
+from sklearn.metrics import accuracy_score, mean_squared_error, r2_score, roc_auc_score, classification_report, f1_score
 from sklearn.ensemble import RandomForestClassifier, HistGradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
@@ -151,13 +151,6 @@ class CodeValidationAgent(Agent):
             'sum': sum,
             'tuple': tuple,
             'type': type,
-            'Exception': Exception,
-            'ValueError': ValueError,
-            'TypeError': TypeError,
-            'KeyError': KeyError,
-            'IndexError': IndexError,
-            'AttributeError': AttributeError,
-            'RuntimeError': RuntimeError,
 
             # Exceptions
             'Exception': Exception,
@@ -168,6 +161,9 @@ class CodeValidationAgent(Agent):
             'AttributeError': AttributeError,
             'RuntimeError': RuntimeError,
             'FileNotFoundError': FileNotFoundError,
+            'ZeroDivisionError': ZeroDivisionError,
+            'StopIteration': StopIteration,
+            'NameError': NameError,
 
             # Type checking
             'isinstance': isinstance,
@@ -175,6 +171,9 @@ class CodeValidationAgent(Agent):
             'callable': callable,
             'hasattr': hasattr,
             'getattr': getattr,
+            'setattr': setattr,
+            'dir': dir,
+            'id': id,
 
             # Iterables
             'zip': zip,
@@ -226,6 +225,9 @@ class CodeValidationAgent(Agent):
             'ColumnTransformer': ColumnTransformer,
             'Pipeline': Pipeline,
             'SimpleImputer': SimpleImputer,
+            'roc_auc_score': roc_auc_score,
+            'classification_report': classification_report,
+            'f1_score': f1_score,
         }
         exec_locals = {
             'df': df.copy()
@@ -235,11 +237,17 @@ class CodeValidationAgent(Agent):
             exec(code, exec_globals, exec_locals)
             result["executed"] = True
         except Exception as e:
-            result["issues"].append(f"Execution error: {e}")
-            self._save_validation_response(result, code_path, data_path, target, problem_type)
+            import traceback
+            error_details = traceback.format_exc()
+            result["issues"].append(f"Execution error: {str(e)}\n{error_details}")
+            result["executed"] = False
 
         metrics = self._extract_result_metrics(exec_locals, target, problem_type)
         result.update(metrics)
+
+        # If no score was found but execution succeeded, that's fine
+        if result["executed"] and result.get("score") is None:
+            result["notes"].append("Code executed successfully but no score variable was set")
 
         if result.get("score") is not None and result.get("baseline_score") is not None:
             result["improvement"] = result["score"] - result["baseline_score"]

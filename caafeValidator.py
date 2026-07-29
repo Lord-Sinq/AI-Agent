@@ -5,12 +5,14 @@ Context-Aware Automated Feature Engineering with Performance Validation
 
 import pandas as pd
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import cross_val_score, train_test_split
-from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.ensemble import RandomForestClassifier, HistGradientBoostingClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler, OneHotEncoder, LabelEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
-from sklearn.metrics import accuracy_score, mean_squared_error, r2_score
+from sklearn.impute import SimpleImputer
+from sklearn.model_selection import cross_val_score, train_test_split
+from sklearn.metrics import accuracy_score, mean_squared_error, r2_score, roc_auc_score, classification_report, f1_score
 from typing import Dict, List, Tuple, Optional, Any
 import re
 from pathlib import Path
@@ -211,10 +213,13 @@ class CAAFEFeatureValidator:
 
             # Safe builtins
             safe_builtins = {
+                # Basic types
                 'abs': abs,
                 'all': all,
                 'any': any,
                 'bool': bool,
+                'bytes': bytes,
+                'bytearray': bytearray,
                 'dict': dict,
                 'float': float,
                 'int': int,
@@ -232,11 +237,25 @@ class CAAFEFeatureValidator:
                 'type': type,
                 'zip': zip,
                 'enumerate': enumerate,
+
+                # Exceptions
+                'Exception': Exception,
+                'ValueError': ValueError,
+                'TypeError': TypeError,
+                'KeyError': KeyError,
+                'IndexError': IndexError,
+                'AttributeError': AttributeError,
+                'RuntimeError': RuntimeError,
+                'FileNotFoundError': FileNotFoundError,
+
+                # Type checking
                 'isinstance': isinstance,
                 'issubclass': issubclass,
                 'callable': callable,
                 'hasattr': hasattr,
                 'getattr': getattr,
+
+                # Constants
                 'True': True,
                 'False': False,
                 'None': None,
@@ -255,6 +274,13 @@ class CAAFEFeatureValidator:
                 'StandardScaler': StandardScaler,
                 'ColumnTransformer': ColumnTransformer,
                 'Pipeline': Pipeline,
+                'OneHotEncoder': OneHotEncoder,
+                'SimpleImputer': SimpleImputer,
+                'LogisticRegression': LogisticRegression,
+                'HistGradientBoostingClassifier': HistGradientBoostingClassifier,
+                'roc_auc_score': roc_auc_score,
+                'classification_report': classification_report,
+                'f1_score': f1_score,
             }
             exec_locals = {'df': df.copy(), 'score': None}
 
@@ -394,7 +420,7 @@ class CAAFEFeatureValidator:
                 try:
                     exec(feature_code, {'__builtins__': {}}, local_ns)
                     current_df = local_ns['df']
-                    print(f"[INFO] ✓ Feature accepted! Current score: {self.current_score:.4f}")
+                    print(f"[INFO] Feature accepted! Current score: {self.current_score:.4f}")
                 except Exception as e:
                     print(f"[WARNING] Failed to apply feature: {e}")
             else:
