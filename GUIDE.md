@@ -27,14 +27,6 @@ docker-compose run --rm ai-agent python main.py
 
 The app will show the available datasets in the data folder and ask you to choose one.
 
-## Demo flow
-
-1. Select a dataset from the data folder.
-2. Optionally provide a domain such as healthcare or retail.
-3. Let the pipeline analyze the dataset and generate feature recommendations.
-4. Review the generated Python script in the generated_code folder.
-5. If validation fails, the tool will retry and save a fixed version.
-
 ## Example commands
 
 ```bash

@@ -98,7 +98,7 @@ python main.py --quiet --no-openml
 
 ```text
 AI-Agent/
-├── data/                  # Example datasets
+├── data/                  # Datasets
 ├── generated_code/        # Generated ML scripts
 ├── responses/             # Saved LLM responses
 ├── main.py                # CLI entry point
@@ -108,9 +108,7 @@ AI-Agent/
 ├── code_validation_agent.py
 ├── domain_agent.py
 ├── llms.py                # Azure OpenAI integration
-├── requirements.txt
-├── README.md
-└── GUIDE.md
+└── requirements.txt
 ```
 
 ## Troubleshooting
