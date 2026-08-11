@@ -90,6 +90,11 @@ def parse_args():
 
     return p.parse_args()
 
+def user_data_prompt():
+    print("\nA prompt for the data (hit enter if not prompt): ")
+    user_response = input()
+    return user_response
+
 
 def setup_save_responses(args):
     """Configure response saving based on args, env, or user prompt."""
@@ -156,7 +161,6 @@ def print_summary(result):
 
 def main():
     """Main entry point."""
-    start_time = time.time()
     args = parse_args()
 
     if args.list_deployments:
@@ -185,6 +189,11 @@ def main():
         print(f"Error: {e}")
         return 1
 
+    # User prompt for more detail on the data
+    user_prompt = user_data_prompt()
+
+    start_time = time.time() # Moved start time to after user text input
+
     print(f"\nFile: {file_path}")
     if args.domain:
         print(f"Domain: {args.domain}")
@@ -199,6 +208,7 @@ def main():
         result = manager.process(
             path=file_path,
             task=args.task,
+            user=user_prompt,
             domain=args.domain,
             target=args.target,
             problem_type=args.problem,
@@ -215,6 +225,7 @@ def main():
                     "file": result.get("file"),
                     "task": result.get("task"),
                     "timestamp": result.get("timestamp"),
+                    "user_prompt": result.get("user_prompt") or result.get("user"),
                     "features": result["pipeline"].get("features", {}),
                     "modeling": {
                         "problem_type": result["pipeline"]["modeling"].get("problem_type"),

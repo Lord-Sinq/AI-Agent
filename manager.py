@@ -32,6 +32,7 @@ class Manager(Agent):
         self,
         path: str,
         task: str,
+        user: str,
         domain: Optional[str] = None,
         target: Optional[str] = None,
         problem_type: Optional[str] = None,
@@ -63,6 +64,8 @@ class Manager(Agent):
         result = {
             "file": path,
             "task": task,
+            "user": user,
+            "user_prompt": user,
             "timestamp": datetime.datetime.now().isoformat(),
             "pipeline": {
                 "domain_analysis": {},
@@ -85,6 +88,7 @@ class Manager(Agent):
             print(f"\n[Domain Expert] Analyzing domain: {domain}")
             domain_result = self.domain_agent.analyze(
                 path=path,
+                user=user,
                 domain=domain,
                 model=model
             )
@@ -117,6 +121,7 @@ class Manager(Agent):
         feature_specs = self.feature_agent.analyze(
             path=path,
             target=target,
+            user=user,
             model=model
         )
 
@@ -167,6 +172,7 @@ class Manager(Agent):
                     feature_info=feature_specs,
                     problem_type=problem_type,
                     target=target,
+                    user=user,
                     model=model
                 )
             else:
@@ -178,6 +184,7 @@ class Manager(Agent):
                     previous_code_path=code_path,
                     problem_type=problem_type,
                     target=target,
+                    user=user,
                     model=model
                 )
 

@@ -13,7 +13,7 @@ class ModelingAgent(Agent):
 
     def generate(self, path: str, feature_info: Optional[dict] = None,
              problem_type: Optional[str] = None, target: Optional[str] = None,
-             model: Optional[str] = None) -> dict:
+             user: Optional[str] = None, model: Optional[str] = None) -> dict:
         content, mt, text, structure = self._read_file(path)
 
         headers = structure.get('headers', [])
@@ -54,8 +54,10 @@ class ModelingAgent(Agent):
         sample_lines = text.splitlines()[:3]
         sample = "\n".join(sample_lines) if len(sample_lines) > 1 else ""
 
+        user_context = f"\nUSER CONTEXT: {user}" if user else ""
+
         prompt = f"""{Path(path).name} | {rows} rows | {len(headers)} cols | FORMAT: {file_format}
-            Target: {target or 'auto'}{feature_context}
+            Target: {target or 'auto'}{feature_context}{user_context}
             From feature_context grab the recomended features, use it to transform the dataset before modeling.
             Use the feature engineering details to choose appropriate preprocessing and models.
             Prefer simple, robust models for datasets and use actual column names.
@@ -206,7 +208,7 @@ class ModelingAgent(Agent):
 
         return ""
 
-    def regenerate_with_feedback(self, path, feature_info, error, previous_code_path=None, problem_type=None, target=None, model=None):
+    def regenerate_with_feedback(self, path, feature_info, error, previous_code_path=None, problem_type=None, target=None, user=None, model=None):
         """
         Regenerate code with error feedback for fixing.
         """
@@ -231,11 +233,13 @@ class ModelingAgent(Agent):
         error_details = error.get('issues', [error.get('error_summary', 'Unknown error')])
         error_preview = "\n".join(str(e) for e in error_details[:3])
 
+        user_context = f"\nUSER CONTEXT: {user}" if user else ""
+
         prompt = f"""Fix the previous code errors.
             Error: {error_preview}
             Data: {Path(path).name} | {rows} rows
             Problem Type: {problem_type or 'classification'}
-            Target: {target or 'auto'}
+            Target: {target or 'auto'}{user_context}
 
             Previous code:
             ```python

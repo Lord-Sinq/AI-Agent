@@ -9,15 +9,16 @@ from base_agent import Agent
 class DomainExpertAgent(Agent):
     """Domain-specific analysis agent."""
 
-    def analyze(self, path: str, domain: str, model: Optional[str] = None) -> dict:
+    def analyze(self, path: str, domain: str, user: Optional[str] = None, model: Optional[str] = None) -> dict:
         content, mt, text, structure = self._read_file(path)
         sample = "\n".join(text.splitlines()[:5])
+        user_context = f"\nUSER CONTEXT: {user}" if user else ""
 
         prompt = f"""Domain: {domain}
         Data file: {path}
         Columns: {structure.get('headers', [])}
         Sample data:
-        {sample}
+        {sample}{user_context}
 
         Return JSON:
         {{"domain_insights":"key insights",

@@ -9,18 +9,20 @@ from base_agent import Agent
 class FeatureEngineerAgent(Agent):
     """Feature engineering recommendations agent."""
 
-    def analyze(self, path: str, target: Optional[str] = None, model: Optional[str] = None) -> dict:
+    def analyze(self, path: str, target: Optional[str] = None, user: Optional[str] = None, model: Optional[str] = None) -> dict:
         content, mt, text, structure = self._read_file(path)
 
         headers = structure.get('headers', [])
         data_types = structure.get('data_types', {})
         rows = structure.get('rows', 0)
 
+        user_context = f"\nUSER CONTEXT: {user}" if user else ""
+
         prompt = f"""DATA: {path}
             ROWS: {rows}
             COLS: {headers}
             TYPES: {data_types}
-            TARGET: {target if target else 'auto'}
+            TARGET: {target if target else 'auto'}{user_context}
 
             You are a data scientist prformming feature-engineering.
             Your final answer must be only one valid JSON object.
@@ -60,7 +62,7 @@ class FeatureEngineerAgent(Agent):
             ROWS: {rows}
             COLS: {headers}
             TYPES: {data_types}
-            TARGET: {target if target else 'auto'}
+            TARGET: {target if target else 'auto'}{user_context}
 
             Use actual column names from COLS only and choose useful features, scaling, encodings, and drops.
             If a column looks like an identifier or metadata, include it in DROP.
