@@ -1,0 +1,253 @@
+Screen {
+    background: $surface;
+}
+
+#main-container {
+    height: 100%;
+    background: $surface;
+}
+
+#sidebar {
+    width: 40;
+    min-width: 40;
+    max-width: 40;
+    background: $panel;
+    border-right: solid $primary;
+    padding: 0 2;
+}
+
+#content-area {
+    height: 100%;
+    background: $surface;
+    padding: 0 1;
+}
+
+#log-area {
+    height: 1fr;
+    border: solid $primary;
+    background: $surface;
+    padding: 0 1;
+}
+
+#status {
+    height: 2;
+    background: $primary;
+    color: $text;
+    padding: 0 1;
+    margin-bottom: 0;
+}
+
+#result-area {
+    height: 5;
+    border: solid $success;
+    padding: 0 1;
+    margin-top: 0;
+    background: $surface;
+}
+
+.title {
+    text-align: center;
+    padding: 0;
+    background: $primary;
+    color: $text;
+    margin-bottom: 0;
+}
+
+.section-label {
+    padding: 0;
+    background: $panel;
+    color: $text;
+    margin: 0;
+    text-style: bold;
+}
+
+.config-box {
+    border: solid $primary;
+    padding: 0 2;
+    margin: 0 0 1 0;
+    background: $surface;
+}
+
+.flags-box {
+    border: solid $warning;
+    padding: 0 2;
+    margin: 0 0 1 0;
+    background: $surface;
+    height: auto;
+}
+
+.dataset-box {
+    border: solid $accent;
+    padding: 0 2;
+    margin: 0 0 1 0;
+    background: $surface;
+}
+
+Button {
+    margin: 0 0 1 0;
+    padding: 0 2;
+    min-height: 1;
+    color: $text;
+    background: $panel;
+    border: solid $primary;
+}
+
+Button:hover {
+    background: $primary;
+    color: $text;
+}
+
+Button.-success {
+    background: $success;
+    color: $text;
+    border: solid $success;
+}
+
+Button.-warning {
+    background: $warning;
+    color: $text;
+    border: solid $warning;
+}
+
+Button.-error {
+    background: $error;
+    color: $text;
+    border: solid $error;
+}
+
+Button.-default {
+    background: $panel;
+    color: $text;
+    border: solid $primary;
+}
+
+#dataset-list {
+    height: 8;
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    background: $surface;
+}
+
+#dataset-list Button {
+    margin: 0;
+    padding: 0 2;
+    min-height: 1;
+    width: 100%;
+    max-width: 100%;
+    background: $panel;
+    border: solid $primary;
+    color: $text;
+}
+
+#dataset-list Button.-success {
+    background: $success;
+    border: solid $success;
+    color: $text;
+}
+
+#dataset-list Button:hover {
+    background: $primary;
+    color: $text;
+}
+
+RadioSet {
+    margin: 0;
+    padding: 0;
+}
+
+RadioButton {
+    margin: 0 2 0 0;
+    padding: 0;
+    color: $text;
+    background: transparent;
+}
+
+RadioButton .toggle {
+    color: $text;
+    background: $panel;
+}
+
+RadioButton .label {
+    color: $text;
+}
+
+RadioButton.-checked .toggle {
+    background: $success;
+    color: $text;
+}
+
+RadioButton.-checked .label {
+    color: $success;
+    text-style: bold;
+}
+
+Input {
+    margin: 0 0 1 0;
+    padding: 0 1;
+    height: 2;
+    width: 100%;
+    max-width: 100%;
+    color: $text;
+    background: $surface;
+    border: solid $primary;
+}
+
+Checkbox {
+    margin: 0;
+    padding: 0;
+    height: 1;
+    color: $text;
+    background: transparent;
+}
+
+Checkbox .toggle {
+    background: $panel;
+    color: $text;
+    width: 2;
+    height: 1;
+}
+
+Checkbox .label {
+    color: $text;
+    margin: 0 0 0 1;
+}
+
+Checkbox.-checked .toggle {
+    background: $success;
+    color: $text;
+}
+
+Checkbox.-checked .label {
+    color: $success;
+    text-style: bold;
+}
+
+Horizontal {
+    margin: 0;
+    padding: 0;
+}
+
+#debug-row {
+    margin: 0 0 1 0;
+    padding: 0;
+}
+
+#debug-row Button {
+    margin: 0 1 0 0;
+    padding: 0 2;
+    min-height: 1;
+    width: auto;
+    background: $panel;
+    border: solid $primary;
+    color: $text;
+}
+
+#debug-row Button:hover {
+    background: $primary;
+    color: $text;
+}
+
+ScrollableContainer {
+    scrollbar-size: 1 1;
+}
