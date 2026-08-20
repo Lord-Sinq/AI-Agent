@@ -12,8 +12,14 @@ services:
       - DEFAULT_MODEL=${DEFAULT_MODEL}
       - STRICT_JSON_MODE=${STRICT_JSON_MODE}
     volumes:
+
+      # Windows 
       # Mount BOTH data and source code for development
-      - ./data:/app/data
-      - .:/app  # This allows live code editing from VS Code
+      # - ./data:/app/data:cached  # This allows live code editing from VS Code
+      # - .:/app
+
+      # Mac 
+      - .:/app:cached  # This allows live code editing from VS Code
+
     # Users will run python manually from VS Code terminal
     command: ["tail", "-f", "/dev/null"]  # Keeps container alive
