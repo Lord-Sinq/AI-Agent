@@ -67,3 +67,4 @@ data/
 responses/
 openml_cache/
 generated_code/
+docker-compose.yml

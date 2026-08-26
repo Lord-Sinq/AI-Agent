@@ -19,10 +19,10 @@ services:
       # - .:/app
 
       # Mac
-      # - .:/app:cached  # This allows live code editing from VS Code
+      - .:/app:cached  # This allows live code editing from VS Code
 
       # Linux
-      - .:/app
+      # - .:/app
 
     # Users will run python manually from VS Code terminal
     command: ["tail", "-f", "/dev/null"]  # Keeps container alive

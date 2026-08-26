@@ -1,8 +1,12 @@
 # Use Python 3.11 slim image for smaller size
-FROM python:3.11-slim
+FROM python:3.13-slim
 
 # Set working directory
 WORKDIR /app
+
+# Set CPU-only for xgboost
+# ENV XGBOOST_BUILD_TYPE=CPU
+# ENV XGBOOST_CPU_ONLY=1
 
 # Set Python environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -21,6 +25,12 @@ COPY requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Install xgboost separately WITHOUT CUDA dependencies
+# RUN pip install --no-cache-dir --no-deps xgboost
+
+# Install xgboost's minimal dependencies (already installed but ensure)
+RUN pip install --no-cache-dir numpy scipy
 
 # Copy all application code
 COPY main.py llms.py agent.py ./
