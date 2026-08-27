@@ -13,20 +13,24 @@ class DummyLLM:
         self.prompts = []
         self.save_responses = False
 
-    def generate(self, prompt, model=None, provider=None, max_tokens=4000, agent=None):
+    def generate(self, prompt, model=None, provider=None, max_tokens=4000, worker=None):
         self.prompts.append(
             {
                 "prompt": prompt,
                 "model": model,
                 "provider": provider,
                 "max_tokens": max_tokens,
-                "agent": agent,
+                "worker": worker,
             }
         )
-        if agent == "Feature":
+        if worker == "Feature":
             return {"text": json.dumps({"features": ["age"], "scale": [], "encode": {}, "drop": []})}
-        if agent == "Modeling":
-            return {"text": json.dumps({"problem": "classification", "target": "target", "models": ["RandomForest"], "code": "import pandas as pd"})}
+        if worker == "Modeling":
+            return {
+                "text": json.dumps(
+                    {"problem": "classification", "target": "target", "models": ["RandomForest"], "code": "import pandas as pd"}
+                )
+            }
         return {
             "text": json.dumps(
                 {
@@ -40,7 +44,7 @@ class DummyLLM:
             )
         }
 
-    def _save_response(self, prompt, response, model, max_tokens, agent):
+    def _save_response(self, prompt, response, model, max_tokens, worker):
         return None
 
 

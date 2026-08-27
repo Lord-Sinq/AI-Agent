@@ -62,13 +62,7 @@ class CodeValidationAgent(Agent):
             "code_validator",
         )
 
-    def validate_code(
-        self,
-        code_path: str,
-        data_path: str,
-        target: Optional[str] = None,
-        problem_type: Optional[str] = None
-    ) -> dict:
+    def validate_code(self, code_path: str, data_path: str, target: Optional[str] = None, problem_type: Optional[str] = None) -> dict:
         result = {
             "code_path": code_path,
             "syntax_ok": False,
@@ -79,7 +73,7 @@ class CodeValidationAgent(Agent):
             "improved": None,
             "issues": [],
             "warnings": [],
-            "notes": []
+            "notes": [],
         }
 
         code_file = Path(code_path)
@@ -128,116 +122,109 @@ class CodeValidationAgent(Agent):
                 result["warnings"].append(f"Baseline evaluation skipped: {e}")
 
         safe_builtins = {
-
             # Basic types
-            'abs': abs,
-            'all': all,
-            'any': any,
-            'bool': bool,
-            'bytes': bytes,
-            'bytearray': bytearray,
-            'dict': dict,
-            'float': float,
-            'int': int,
-            'len': len,
-            'list': list,
-            'max': max,
-            'min': min,
-            'object': object,
-            'print': print,
-            'range': range,
-            'set': set,
-            'str': str,
-            'sum': sum,
-            'tuple': tuple,
-            'type': type,
-
+            "abs": abs,
+            "all": all,
+            "any": any,
+            "bool": bool,
+            "bytes": bytes,
+            "bytearray": bytearray,
+            "dict": dict,
+            "float": float,
+            "int": int,
+            "len": len,
+            "list": list,
+            "max": max,
+            "min": min,
+            "object": object,
+            "print": print,
+            "range": range,
+            "set": set,
+            "str": str,
+            "sum": sum,
+            "tuple": tuple,
+            "type": type,
             # Exceptions
-            'Exception': Exception,
-            'ValueError': ValueError,
-            'TypeError': TypeError,
-            'KeyError': KeyError,
-            'IndexError': IndexError,
-            'AttributeError': AttributeError,
-            'RuntimeError': RuntimeError,
-            'FileNotFoundError': FileNotFoundError,
-            'ZeroDivisionError': ZeroDivisionError,
-            'StopIteration': StopIteration,
-            'NameError': NameError,
-
+            "Exception": Exception,
+            "ValueError": ValueError,
+            "TypeError": TypeError,
+            "KeyError": KeyError,
+            "IndexError": IndexError,
+            "AttributeError": AttributeError,
+            "RuntimeError": RuntimeError,
+            "FileNotFoundError": FileNotFoundError,
+            "ZeroDivisionError": ZeroDivisionError,
+            "StopIteration": StopIteration,
+            "NameError": NameError,
             # Type checking
-            'isinstance': isinstance,
-            'issubclass': issubclass,
-            'callable': callable,
-            'hasattr': hasattr,
-            'getattr': getattr,
-            'setattr': setattr,
-            'dir': dir,
-            'id': id,
-
+            "isinstance": isinstance,
+            "issubclass": issubclass,
+            "callable": callable,
+            "hasattr": hasattr,
+            "getattr": getattr,
+            "setattr": setattr,
+            "dir": dir,
+            "id": id,
             # Iterables
-            'zip': zip,
-            'enumerate': enumerate,
-            'map': map,
-            'filter': filter,
-            'sorted': sorted,
-            'reversed': reversed,
-
+            "zip": zip,
+            "enumerate": enumerate,
+            "map": map,
+            "filter": filter,
+            "sorted": sorted,
+            "reversed": reversed,
             # Constants
-            'True': True,
-            'False': False,
-            'None': None,
-            '__import__': __import__,
-
+            "True": True,
+            "False": False,
+            "None": None,
+            "__import__": __import__,
             # Useful functions
-            'property': property,
-            'staticmethod': staticmethod,
-            'classmethod': classmethod,
-            'super': super,
-            'round': round,
-            'pow': pow,
-            'divmod': divmod,
-            'format': format,
-            'repr': repr,
-            'ascii': ascii,
-            'ord': ord,
-            'chr': chr,
-            'hex': hex,
-            'oct': oct,
-            'bin': bin,
+            "property": property,
+            "staticmethod": staticmethod,
+            "classmethod": classmethod,
+            "super": super,
+            "round": round,
+            "pow": pow,
+            "divmod": divmod,
+            "format": format,
+            "repr": repr,
+            "ascii": ascii,
+            "ord": ord,
+            "chr": chr,
+            "hex": hex,
+            "oct": oct,
+            "bin": bin,
         }
 
         exec_globals = {
-            '__builtins__': safe_builtins,
-            'pd': pd,
-            'np': np,
-            'sklearn': sklearn,
-            'scipy': scipy,
-            'accuracy_score': accuracy_score,
-            'mean_squared_error': mean_squared_error,
-            'r2_score': r2_score,
-            'RandomForestClassifier': RandomForestClassifier,
-            'HistGradientBoostingClassifier': HistGradientBoostingClassifier,
-            'LogisticRegression': LogisticRegression,
-            'train_test_split': train_test_split,
-            'StandardScaler': StandardScaler,
-            'OneHotEncoder': OneHotEncoder,
-            'ColumnTransformer': ColumnTransformer,
-            'Pipeline': Pipeline,
-            'SimpleImputer': SimpleImputer,
-            'roc_auc_score': roc_auc_score,
-            'classification_report': classification_report,
-            'f1_score': f1_score,
+            "__builtins__": safe_builtins,
+            "pd": pd,
+            "np": np,
+            "sklearn": sklearn,
+            "scipy": scipy,
+            "accuracy_score": accuracy_score,
+            "mean_squared_error": mean_squared_error,
+            "r2_score": r2_score,
+            "RandomForestClassifier": RandomForestClassifier,
+            "HistGradientBoostingClassifier": HistGradientBoostingClassifier,
+            "LogisticRegression": LogisticRegression,
+            "train_test_split": train_test_split,
+            "StandardScaler": StandardScaler,
+            "OneHotEncoder": OneHotEncoder,
+            "ColumnTransformer": ColumnTransformer,
+            "Pipeline": Pipeline,
+            "SimpleImputer": SimpleImputer,
+            "roc_auc_score": roc_auc_score,
+            "classification_report": classification_report,
+            "f1_score": f1_score,
         }
-        exec_locals = {
-            'df': df.copy()
-        }
+        exec_locals = {"df": df.copy()}
 
         try:
             exec(code, exec_globals, exec_locals)
             result["executed"] = True
         except Exception as e:
             import traceback
+
             error_details = traceback.format_exc()
             result["issues"].append(f"Execution error: {str(e)}\n{error_details}")
             result["executed"] = False
@@ -258,17 +245,17 @@ class CodeValidationAgent(Agent):
 
     @staticmethod
     def _load_data(path: str) -> pd.DataFrame:
-        if path.endswith('.arff'):
+        if path.endswith(".arff"):
             try:
                 from scipy.io import arff
             except ImportError:
                 raise ImportError("scipy is required for ARFF support")
             data, meta = arff.loadarff(path)
             df = pd.DataFrame(data)
-            for col in df.select_dtypes(include=['object']).columns:
+            for col in df.select_dtypes(include=["object"]).columns:
                 try:
                     if len(df[col]) > 0 and isinstance(df[col].iloc[0], bytes):
-                        df[col] = df[col].str.decode('utf-8')
+                        df[col] = df[col].str.decode("utf-8")
                 except (IndexError, AttributeError, UnicodeDecodeError):
                     pass
             return df
@@ -281,50 +268,49 @@ class CodeValidationAgent(Agent):
         warnings: List[str] = []
         issues: List[str] = []
 
-        if 'score' in exec_locals:
+        if "score" in exec_locals:
             try:
-                score = float(exec_locals['score'])
+                score = float(exec_locals["score"])
             except Exception as e:
                 warnings.append(f"Unable to parse score: {e}")
 
-        elif 'y_pred' in exec_locals and 'y_test' in exec_locals:
+        elif "y_pred" in exec_locals and "y_test" in exec_locals:
             try:
                 from sklearn.metrics import accuracy_score, mean_squared_error, r2_score
-                y_test = exec_locals['y_test']
-                y_pred = exec_locals['y_pred']
-                if problem_type == 'regression':
+
+                y_test = exec_locals["y_test"]
+                y_pred = exec_locals["y_pred"]
+                if problem_type == "regression":
                     score = r2_score(y_test, y_pred)
                 else:
                     score = accuracy_score(y_test, y_pred)
             except Exception as e:
                 issues.append(f"Unable to evaluate predictions: {e}")
 
-        elif 'pipe' in exec_locals and 'X_test' in exec_locals and 'y_test' in exec_locals:
+        elif "pipe" in exec_locals and "X_test" in exec_locals and "y_test" in exec_locals:
             try:
                 from sklearn.metrics import accuracy_score, mean_squared_error, r2_score
-                y_test = exec_locals['y_test']
-                y_pred = exec_locals['pipe'].predict(exec_locals['X_test'])
-                if problem_type == 'regression':
+
+                y_test = exec_locals["y_test"]
+                y_pred = exec_locals["pipe"].predict(exec_locals["X_test"])
+                if problem_type == "regression":
                     score = r2_score(y_test, y_pred)
                 else:
                     score = accuracy_score(y_test, y_pred)
             except Exception as e:
                 issues.append(f"Unable to evaluate pipeline: {e}")
 
-        elif 'model' in exec_locals and 'X_test' in exec_locals and 'y_test' in exec_locals:
+        elif "model" in exec_locals and "X_test" in exec_locals and "y_test" in exec_locals:
             try:
                 from sklearn.metrics import accuracy_score, mean_squared_error, r2_score
-                y_test = exec_locals['y_test']
-                y_pred = exec_locals['model'].predict(exec_locals['X_test'])
-                if problem_type == 'regression':
+
+                y_test = exec_locals["y_test"]
+                y_pred = exec_locals["model"].predict(exec_locals["X_test"])
+                if problem_type == "regression":
                     score = r2_score(y_test, y_pred)
                 else:
                     score = accuracy_score(y_test, y_pred)
             except Exception as e:
                 issues.append(f"Unable to evaluate model predictions: {e}")
 
-        return {
-            'score': score,
-            'warnings': warnings,
-            'issues': issues
-        }
+        return {"score": score, "warnings": warnings, "issues": issues}

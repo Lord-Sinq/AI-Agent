@@ -62,14 +62,14 @@ class LLMManager:
         else:
             return "You are a helpful assistant that provides accurate information."
 
-    def _save_response(self, prompt: str, response: dict, model: Optional[str], max_tokens: int, agent: str) -> None:
+    def _save_response(self, prompt: str, response: dict, model: Optional[str], max_tokens: int, worker: str) -> None:
         if not self.save_responses:
             return
 
         model = model or "unknown_model"
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
         prompt_preview = prompt[:50].replace(" ", "_").replace("\n", "").replace("/", "_")
-        filename = f"{timestamp}_{agent}_{model}_{prompt_preview}.json"
+        filename = f"{timestamp}_{worker}_{model}_{prompt_preview}.json"
         filepath = self.responses_dir / filename
 
         # Also save the raw response text separately for debugging
@@ -79,13 +79,13 @@ class LLMManager:
         response_data = {
             "timestamp": datetime.now().isoformat(),
             "model": model,
-            "agent": agent,
+            "worker": worker,
             "max_completion_tokens": max_tokens,
             "prompt_length": len(prompt),
             "prompt_preview": prompt[:200] + "..." if len(prompt) > 200 else prompt,
             "response": response.get("text", ""),
             "response_length": len(response.get("text", "")),
-            "strict_mode": self.strict_json_mode
+            "strict_mode": self.strict_json_mode,
         }
 
         try:
@@ -95,9 +95,11 @@ class LLMManager:
         except Exception as e:
             print(f"[WARNING] Failed to save response: {e}")
 
-    def generate(self, prompt: str, model: Optional[str] = None, provider: Optional[str] = None, max_tokens: int = 4000, agent: Optional[str] = None) -> dict:
+    def generate(
+        self, prompt: str, model: Optional[str] = None, provider: Optional[str] = None, max_tokens: int = 4000, worker: Optional[str] = None
+    ) -> dict:
         model = model or self.azure_deployment_name
-        agent = agent or ""
+        worker = worker or ""
 
         if provider is None:
             if self.azure_endpoint and self.azure_api_key and self.azure_deployment_name:
@@ -131,10 +133,7 @@ class LLMManager:
             system_prompt = self._get_system_prompt()
 
             payload = {
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt}
-                ],
+                "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}],
                 "max_completion_tokens": max_tokens,
                 "temperature": 0.0,  # Lower for more deterministic output
                 "top_p": 0.9,
@@ -167,12 +166,12 @@ class LLMManager:
                 print(f"[INFO] Generated {len(text)} chars")
                 response = {"text": text, "raw": j}
 
-                self._save_response(prompt, response, model, max_tokens, agent)
+                self._save_response(prompt, response, model, max_tokens, worker)
                 return response
 
             except requests.exceptions.RequestException as e:
                 error_msg = str(e)
-                if hasattr(r, 'status_code'):
+                if hasattr(r, "status_code"):
                     if r.status_code == 400:
                         error_msg = f"Bad request. Prompt length: {len(prompt)} chars. {str(e)}"
                     elif r.status_code == 404:
@@ -185,44 +184,44 @@ class LLMManager:
         """Aggressively clean response to extract only valid JSON."""
 
         # Remove <think> blocks
-        if '<think>' in text:
-            text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+        if "<think>" in text:
+            text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
 
         # Remove common leading prefixes that are not part of JSON
         prefixes_to_remove = [
-            r'^Here is your JSON:?\s*',
-            r'^Here is the JSON:?\s*',
-            r'^JSON:?\s*',
-            r'^The JSON is:?\s*',
-            r'^Output:?\s*',
-            r'^Response:?\s*',
-            r'^```json\s*',
-            r'^```\s*',
-            r'^\s*',
+            r"^Here is your JSON:?\s*",
+            r"^Here is the JSON:?\s*",
+            r"^JSON:?\s*",
+            r"^The JSON is:?\s*",
+            r"^Output:?\s*",
+            r"^Response:?\s*",
+            r"^```json\s*",
+            r"^```\s*",
+            r"^\s*",
         ]
 
         for prefix in prefixes_to_remove:
-            text = re.sub(prefix, '', text, flags=re.IGNORECASE)
+            text = re.sub(prefix, "", text, flags=re.IGNORECASE)
 
         # Remove trailing fenced code block endings
-        text = re.sub(r'\s*```\s*$', '', text)
+        text = re.sub(r"\s*```\s*$", "", text)
 
         # Find all candidate JSON substrings by scanning for balanced braces/brackets
         candidates = []
         stack = []
         start_idx = None
         for i, ch in enumerate(text):
-            if ch in '{[':
+            if ch in "{[":
                 if not stack:
                     start_idx = i
                 stack.append(ch)
-            elif ch in '}]' and stack:
+            elif ch in "}]" and stack:
                 # check match
                 top = stack[-1]
-                if (top == '{' and ch == '}') or (top == '[' and ch == ']'):
+                if (top == "{" and ch == "}") or (top == "[" and ch == "]"):
                     stack.pop()
                     if not stack and start_idx is not None:
-                        candidates.append(text[start_idx:i+1])
+                        candidates.append(text[start_idx : i + 1])
                         start_idx = None
                 else:
                     # mismatched, reset
@@ -250,24 +249,25 @@ class LLMManager:
         def try_sanitize_and_load(s: str) -> Optional[str]:
             # Remove surrounding prose before first brace
             import re
-            m = re.search(r'[\{\[]', s)
+
+            m = re.search(r"[\{\[]", s)
             if m:
-                s = s[m.start():]
+                s = s[m.start() :]
             # Remove trailing non-brace text
             last = None
-            for i in range(len(s)-1, -1, -1):
-                if s[i] in '}]':
+            for i in range(len(s) - 1, -1, -1):
+                if s[i] in "}]":
                     last = i
                     break
             if last is not None:
-                s = s[:last+1]
+                s = s[: last + 1]
 
             # Try simple Python->JSON normalization
             candidate = s.strip()
             # Replace Python True/False/None with JSON equivalents
-            candidate = re.sub(r'\bTrue\b', 'true', candidate)
-            candidate = re.sub(r'\bFalse\b', 'false', candidate)
-            candidate = re.sub(r'\bNone\b', 'null', candidate)
+            candidate = re.sub(r"\bTrue\b", "true", candidate)
+            candidate = re.sub(r"\bFalse\b", "false", candidate)
+            candidate = re.sub(r"\bNone\b", "null", candidate)
             # Convert single quotes to double quotes when safe
             # only if string uses single quotes for JSON-like structure
             if "'{" not in candidate and '\\"' not in candidate:
@@ -287,18 +287,18 @@ class LLMManager:
         # Fallback: try to heuristically find first {..}..} block as before
         start = -1
         for i, char in enumerate(text):
-            if char in '{[':
+            if char in "{[":
                 start = i
                 break
 
         end = -1
         for i in range(len(text) - 1, -1, -1):
-            if text[i] in '}]':
+            if text[i] in "}]":
                 end = i
                 break
 
         if start != -1 and end != -1 and end > start:
-            json_candidate = text[start:end+1]
+            json_candidate = text[start : end + 1]
             try:
                 json.loads(json_candidate)
                 return json_candidate

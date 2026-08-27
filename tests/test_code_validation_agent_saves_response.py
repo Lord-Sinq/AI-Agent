@@ -12,11 +12,11 @@ class DummyLLM:
         self.responses_dir = responses_dir
         self.saved_files = []
 
-    def _save_response(self, prompt, response, model, max_tokens, agent):
+    def _save_response(self, prompt, response, model, max_tokens, worker):
         self.responses_dir.mkdir(parents=True, exist_ok=True)
-        filepath = self.responses_dir / f"{agent}_response.json"
+        filepath = self.responses_dir / f"{worker}_response.json"
         payload = {
-            "agent": agent,
+            "worker": worker,
             "prompt": prompt,
             "response": response,
             "model": model,
@@ -36,8 +36,7 @@ def test_validate_code_saves_response_payload(tmp_path):
 
     code_path = tmp_path / "model.py"
     code_path.write_text(
-        "import pandas as pd\n"
-        "score = 0.75\n",
+        "import pandas as pd\n" "score = 0.75\n",
         encoding="utf-8",
     )
 
@@ -49,4 +48,4 @@ def test_validate_code_saves_response_payload(tmp_path):
     saved_path = Path(llm.saved_files[0])
     assert saved_path.exists()
     payload = json.loads(saved_path.read_text(encoding="utf-8"))
-    assert payload["agent"] == "code_validator"
+    assert payload["worker"] == "code_validator"

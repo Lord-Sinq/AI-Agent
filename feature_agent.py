@@ -12,9 +12,9 @@ class FeatureEngineerAgent(Agent):
     def analyze(self, path: str, target: Optional[str] = None, user: Optional[str] = None, model: Optional[str] = None) -> dict:
         content, mt, text, structure = self._read_file(path)
 
-        headers = structure.get('headers', [])
-        data_types = structure.get('data_types', {})
-        rows = structure.get('rows', 0)
+        headers = structure.get("headers", [])
+        data_types = structure.get("data_types", {})
+        rows = structure.get("rows", 0)
 
         user_context = f"\nUSER CONTEXT: {user}" if user else ""
 
@@ -46,7 +46,7 @@ class FeatureEngineerAgent(Agent):
             Example output:
                 {{"features":["age","salary"],"scale":["age"],"encode":{{"gender":"label"}},"drop":["customer_id"],"feature_details":"Scale numeric columns and label encode gender.","derived_features":["age_squared"],"feature_metadata":{{"reason":"high correlation with churn"}}}}"""
 
-        resp = self.llm.generate(prompt, model=model, max_tokens=800, agent="Feature")
+        resp = self.llm.generate(prompt, model=model, max_tokens=800, worker="Feature")
         raw_response = resp.get("text", "")
         recommendations = self._normalize_feature_recommendations(self._extract_json(raw_response), headers, data_types, target)
         feature_details = self._summarize_response(raw_response)
@@ -76,16 +76,21 @@ class FeatureEngineerAgent(Agent):
 
             retry_resp = self.llm.generate(retry_prompt, model=model, max_tokens=800)
             recommendations = self._normalize_feature_recommendations(
-                self._extract_json(retry_resp.get("text", "")), headers, data_types, target)
+                self._extract_json(retry_resp.get("text", "")), headers, data_types, target
+            )
 
             if isinstance(recommendations, dict) and not self._valid_feature_recommendations(recommendations):
-                if headers and set(recommendations.keys()).issubset(set(headers)) and all(isinstance(v, str) for v in recommendations.values()):
+                if (
+                    headers
+                    and set(recommendations.keys()).issubset(set(headers))
+                    and all(isinstance(v, str) for v in recommendations.values())
+                ):
                     wrapped = {
                         "features": [h for h in headers if h not in recommendations.keys() and h != target][:10],
-                        "scale": [h for h in headers if data_types.get(h) in ['numeric', 'float']][:5],
+                        "scale": [h for h in headers if data_types.get(h) in ["numeric", "float"]][:5],
                         "encode": recommendations,
-                        "drop": [h for h in headers if 'id' in h.lower() or 'date' in h.lower()],
-                        "feature_metadata": {"note": "wrapped encode-only response"}
+                        "drop": [h for h in headers if "id" in h.lower() or "date" in h.lower()],
+                        "feature_metadata": {"note": "wrapped encode-only response"},
                     }
                     if self._valid_feature_recommendations(wrapped):
                         recommendations = wrapped
@@ -95,7 +100,8 @@ class FeatureEngineerAgent(Agent):
                 completion_prompt = f"""You returned a partial JSON: {json.dumps(recommendations)}\n\nUsing the DATA: {path} with COLS: {headers} and TYPES: {data_types}, produce ONLY one valid JSON object with keys: features, scale, encode, drop.\nOptional keys may include: feature_details, feature_reasons, feature_notes, derived_features, feature_metadata.\nDo not invent columns outside COLS. Fill missing keys sensibly and use actual column names.\nIf you cannot produce valid JSON, return {{"error":"json"}} only.\nRETURN ONLY VALID JSON DO NOT RETURN CODE OR CODE SNIPPETS."""
                 comp_resp = self.llm.generate(completion_prompt, model=model, max_tokens=800)
                 comp_json = self._normalize_feature_recommendations(
-                    self._extract_json(comp_resp.get("text", "")), headers, data_types, target)
+                    self._extract_json(comp_resp.get("text", "")), headers, data_types, target
+                )
                 if self._valid_feature_recommendations(comp_json):
                     recommendations = comp_json
                     break
@@ -117,15 +123,11 @@ class FeatureEngineerAgent(Agent):
             "feature_notes": recommendations.get("feature_notes", ""),
             "derived_features": recommendations.get("derived_features", []),
             "feature_metadata": recommendations.get("feature_metadata", {}),
-            "raw_feature_response": raw_response
+            "raw_feature_response": raw_response,
         }
 
     def _normalize_feature_recommendations(
-        self,
-        recommendations: Any,
-        headers: List[str],
-        data_types: Dict[str, str],
-        target: Optional[str]
+        self, recommendations: Any, headers: List[str], data_types: Dict[str, str], target: Optional[str]
     ) -> Any:
         if isinstance(recommendations, dict):
             if self._valid_feature_recommendations(recommendations):
@@ -134,10 +136,10 @@ class FeatureEngineerAgent(Agent):
             if headers and set(recommendations.keys()).issubset(set(headers)) and all(isinstance(v, str) for v in recommendations.values()):
                 wrapped = {
                     "features": [h for h in headers if h not in recommendations.keys() and h != target][:10],
-                    "scale": [h for h in headers if data_types.get(h) in ['numeric', 'float']][:5],
+                    "scale": [h for h in headers if data_types.get(h) in ["numeric", "float"]][:5],
                     "encode": recommendations,
-                    "drop": [h for h in headers if 'id' in h.lower() or 'date' in h.lower()],
-                    "feature_metadata": {"note": "wrapped encode-only response"}
+                    "drop": [h for h in headers if "id" in h.lower() or "date" in h.lower()],
+                    "feature_metadata": {"note": "wrapped encode-only response"},
                 }
                 if self._valid_feature_recommendations(wrapped):
                     return wrapped
@@ -145,14 +147,14 @@ class FeatureEngineerAgent(Agent):
             if any(key in recommendations for key in ["features", "scale", "encode", "drop"]):
                 wrapped = {
                     "features": recommendations.get("features", [h for h in headers if h != target][:10]),
-                    "scale": recommendations.get("scale", [h for h in headers if data_types.get(h) in ['numeric', 'float']][:5]),
+                    "scale": recommendations.get("scale", [h for h in headers if data_types.get(h) in ["numeric", "float"]][:5]),
                     "encode": recommendations.get("encode", {}),
-                    "drop": recommendations.get("drop", [h for h in headers if 'id' in h.lower() or 'date' in h.lower()]),
+                    "drop": recommendations.get("drop", [h for h in headers if "id" in h.lower() or "date" in h.lower()]),
                     "feature_details": recommendations.get("feature_details", ""),
                     "feature_reasons": recommendations.get("feature_reasons", ""),
                     "feature_notes": recommendations.get("feature_notes", ""),
                     "derived_features": recommendations.get("derived_features", []),
-                    "feature_metadata": recommendations.get("feature_metadata", {"note": "wrapped partial feature response"})
+                    "feature_metadata": recommendations.get("feature_metadata", {"note": "wrapped partial feature response"}),
                 }
                 if self._valid_feature_recommendations(wrapped):
                     return wrapped
@@ -160,10 +162,10 @@ class FeatureEngineerAgent(Agent):
         if isinstance(recommendations, list) and all(isinstance(item, str) for item in recommendations):
             return {
                 "features": recommendations[:10],
-                "scale": [h for h in headers if data_types.get(h) in ['numeric', 'float']][:5],
+                "scale": [h for h in headers if data_types.get(h) in ["numeric", "float"]][:5],
                 "encode": {},
-                "drop": [h for h in headers if 'id' in h.lower() or 'date' in h.lower()],
-                "feature_metadata": {"note": "wrapped feature list response"}
+                "drop": [h for h in headers if "id" in h.lower() or "date" in h.lower()],
+                "feature_metadata": {"note": "wrapped feature list response"},
             }
 
         return recommendations
@@ -188,18 +190,18 @@ class FeatureEngineerAgent(Agent):
         return True
 
     def _default_features(self, headers: List[str], data_types: Dict[str, str]) -> dict:
-        numeric = [h for h in headers if data_types.get(h) in ['numeric', 'float']]
-        categorical = [h for h in headers if data_types.get(h) == 'categorical']
+        numeric = [h for h in headers if data_types.get(h) in ["numeric", "float"]]
+        categorical = [h for h in headers if data_types.get(h) == "categorical"]
 
         return {
             "features": headers[:10],
             "scale": numeric[:5],
             "encode": {col: "label" for col in categorical[:3]},
-            "drop": [h for h in headers if 'id' in h.lower() or 'date' in h.lower()],
+            "drop": [h for h in headers if "id" in h.lower() or "date" in h.lower()],
             "feature_details": "Fallback default features used because the model response could not be parsed into valid JSON.",
             "feature_reasons": "Fallback generated defaults",
             "feature_notes": "Default feature list because JSON extraction failed.",
             "derived_features": [],
             "feature_metadata": {"note": "default fallback"},
-            "raw_feature_response": ""
+            "raw_feature_response": "",
         }
