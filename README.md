@@ -61,6 +61,7 @@ python main.py --file data/dataset_titanic.arff --domain healthcare --target cla
 python main.py --file data/dataset_titanic.arff --problem classification --model gpt-4o-mini
 python main.py --list-deployments
 python main.py --file data/dataset_titanic.arff --no-openml --no-save-responses
+python main.py --file data/dataset_titanic.arff --hyperparameters config/hyperparameters.json
 ```
 
 ### CLI controls
@@ -76,6 +77,7 @@ python main.py --file data/dataset_titanic.arff --no-openml --no-save-responses
 - `--no-save-responses`: disable LLM response saving for the current run.
 - `-q`, `--quiet`: reduce console output and skip the response-saving prompt.
 - `--no-openml`: skip the local similarity search in `openMLdatasets/`.
+- `--hyperparameters`: use a JSON file mapping model names to constructor parameters. Defaults to `config/hyperparameters.json`.
 
 The data-description prompt is currently shown after file selection even when `--quiet` is supplied, so provide input when running the CLI interactively.
 
@@ -116,6 +118,10 @@ docker-compose down
 6. Run the performance validation stage and print a summary.
 
 Generated scripts are saved in `generated_code/`. A retry may create both `<dataset>_model.py` and `<dataset>_model_fixed.py`. The CLI also prints the generated code preview, validation summary, response directory when enabled, and total runtime. Structured LLM and validator responses are saved under `responses/` when response saving is enabled.
+
+### Hyperparameter configuration
+
+Model settings are stored in `config/hyperparameters.json` and included in the modeling and code-fix prompts. Each key is a model class name and each value is a JSON object of constructor parameters. Use `--hyperparameters PATH` to run an experiment with a different configuration. The selected configuration is included in the pipeline result for reproducibility.
 
 ## Project structure
 

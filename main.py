@@ -10,6 +10,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from llms import LLMManager
 from manager import Manager
+from hyperparameters import load_hyperparameters
 
 load_dotenv()
 
@@ -19,9 +20,7 @@ def get_files(data_dir: str = "data") -> list:
     path = Path(data_dir)
     if not path.exists():
         return []
-    return sorted([f.name for f in path.iterdir()
-                   if f.is_file() and f.suffix.lower() in ['.csv', '.arff']
-                   and not f.name.startswith('.')])
+    return sorted([f.name for f in path.iterdir() if f.is_file() and f.suffix.lower() in [".csv", ".arff"] and not f.name.startswith(".")])
 
 
 def pick_file(data_dir: str = "data") -> str:
@@ -54,9 +53,9 @@ def ask_save_responses() -> bool:
 
     while True:
         choice = input("\nSave responses? (yes/no): ").strip().lower()
-        if choice in ['yes', 'y']:
+        if choice in ["yes", "y"]:
             return True
-        if choice in ['no', 'n']:
+        if choice in ["no", "n"]:
             return False
         print("Enter 'yes' or 'no'")
 
@@ -73,7 +72,7 @@ def parse_args():
         python main.py --save-responses                  # Enable response saving
         python main.py --list-deployments                # List Azure models
         python main.py --quiet --no-openml               # Silent mode, no OpenML
-                """
+                """,
     )
 
     p.add_argument("-f", "--file", help="Path to CSV file")
@@ -87,8 +86,14 @@ def parse_args():
     p.add_argument("--no-save-responses", action="store_true", help="Don't save responses")
     p.add_argument("--quiet", "-q", action="store_true", help="Suppress prompts")
     p.add_argument("--no-openml", action="store_true", help="Disable OpenML")
+    p.add_argument(
+        "--hyperparameters",
+        metavar="PATH",
+        help="Path to a JSON model hyperparameter configuration",
+    )
 
     return p.parse_args()
+
 
 def user_data_prompt():
     print("\nA prompt for the data (hit enter if not prompt): ")
@@ -111,8 +116,8 @@ def setup_save_responses(args):
         return False
 
     env_save = os.getenv("SAVE_RESPONSES", "").lower()
-    if env_save in ['true', 'false']:
-        save = env_save == 'true'
+    if env_save in ["true", "false"]:
+        save = env_save == "true"
         if not args.quiet:
             print(f"Response saving from .env: {save}")
         os.environ["SAVE_RESPONSES"] = str(save).lower()
@@ -159,6 +164,7 @@ def print_summary(result):
         print(f"Found {result['openml_context'].get('similar_count', 0)} similar datasets")
     print("\n" + "=" * 60)
 
+
 def main():
     """Main entry point."""
     args = parse_args()
@@ -178,6 +184,12 @@ def main():
     setup_save_responses(args)
 
     try:
+        hyperparameters = load_hyperparameters(args.hyperparameters)
+    except (OSError, ValueError, json.JSONDecodeError) as e:
+        print(f"Invalid hyperparameter configuration: {e}")
+        return 1
+
+    try:
         llm = LLMManager()
     except Exception as e:
         print(f"Failed to initialize LLM: {e}")
@@ -192,7 +204,7 @@ def main():
     # User prompt for more detail on the data
     user_prompt = user_data_prompt()
 
-    start_time = time.time() # Moved start time to after user text input
+    start_time = time.time()  # Moved start time to after user text input
 
     print(f"\nFile: {file_path}")
     if args.domain:
@@ -213,7 +225,8 @@ def main():
             target=args.target,
             problem_type=args.problem,
             use_openml=not args.no_openml,
-            model=args.model
+            model=args.model,
+            hyperparameters=hyperparameters,
         )
 
         print("\nPipeline complete!")
@@ -222,19 +235,19 @@ def main():
         if not args.quiet:
             print("\nDetailed results:")
             clean_result = {
-                    "file": result.get("file"),
-                    "task": result.get("task"),
-                    "timestamp": result.get("timestamp"),
-                    "user_prompt": result.get("user_prompt") or result.get("user"),
-                    "features": result["pipeline"].get("features", {}),
-                    "modeling": {
-                        "problem_type": result["pipeline"]["modeling"].get("problem_type"),
-                        "target": result["pipeline"]["modeling"].get("target"),
-                        "models": result["pipeline"]["modeling"].get("recommended_models", []),
-                        "code_generated": result["pipeline"]["modeling"].get("code_generated"),
-                        "code_path": result["pipeline"]["modeling"].get("code_path")
-                    }
-                }
+                "file": result.get("file"),
+                "task": result.get("task"),
+                "timestamp": result.get("timestamp"),
+                "user_prompt": result.get("user_prompt") or result.get("user"),
+                "features": result["pipeline"].get("features", {}),
+                "modeling": {
+                    "problem_type": result["pipeline"]["modeling"].get("problem_type"),
+                    "target": result["pipeline"]["modeling"].get("target"),
+                    "models": result["pipeline"]["modeling"].get("recommended_models", []),
+                    "code_generated": result["pipeline"]["modeling"].get("code_generated"),
+                    "code_path": result["pipeline"]["modeling"].get("code_path"),
+                },
+            }
             print(json.dumps(clean_result, indent=2))
 
         code_generated = False
@@ -256,7 +269,7 @@ def main():
                 print("\n... (see full file for complete code)")
 
         # Show response save location
-        if os.getenv("SAVE_RESPONSES") == "true" and hasattr(llm, 'responses_dir'):
+        if os.getenv("SAVE_RESPONSES") == "true" and hasattr(llm, "responses_dir"):
             print("\n" + "=" * 60)
             print(f"\nResponses saved to: {llm.responses_dir}")
 
@@ -266,12 +279,13 @@ def main():
         elapsed = time.time() - start_time
         print(f"\nTotal runtime: {elapsed:.2f} seconds")
         print("\n" + "=" * 60)
-        print('\n\n\n')
+        print("\n\n\n")
 
     except Exception as e:
         print(f"\n Error: {e}")
         if not args.quiet:
             import traceback
+
             traceback.print_exc()
         return 1
 

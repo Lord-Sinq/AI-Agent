@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from base_agent import Agent
+from hyperparameters import format_hyperparameters
 
 
 class ModelingAgent(Agent):
@@ -19,6 +20,7 @@ class ModelingAgent(Agent):
         target: Optional[str] = None,
         user: Optional[str] = None,
         model: Optional[str] = None,
+        hyperparameters: Optional[dict] = None,
     ) -> dict:
         content, mt, text, structure = self._read_file(path)
 
@@ -61,9 +63,12 @@ class ModelingAgent(Agent):
         sample = "\n".join(sample_lines) if len(sample_lines) > 1 else ""
 
         user_context = f"\nUSER CONTEXT: {user}" if user else ""
+        hyperparameter_context = format_hyperparameters(hyperparameters)
 
         prompt = f"""{Path(path).name} | {rows} rows | {len(headers)} cols | FORMAT: {file_format}
             Target: {target or 'auto'}{feature_context}{user_context}
+            HYPERPARAMETERS (use these values when instantiating matching models):
+            {hyperparameter_context}
             From feature_context grab the recomended features, use it to transform the dataset before modeling.
             Use the feature engineering details to choose appropriate preprocessing and models.
             Prefer simple, robust models for datasets and use actual column names.
@@ -205,7 +210,16 @@ class ModelingAgent(Agent):
         return ""
 
     def regenerate_with_feedback(
-        self, path, feature_info, error, previous_code_path=None, problem_type=None, target=None, user=None, model=None
+        self,
+        path,
+        feature_info,
+        error,
+        previous_code_path=None,
+        problem_type=None,
+        target=None,
+        user=None,
+        model=None,
+        hyperparameters=None,
     ):
         """
         Regenerate code with error feedback for fixing.
@@ -232,12 +246,15 @@ class ModelingAgent(Agent):
         error_preview = "\n".join(str(e) for e in error_details[:3])
 
         user_context = f"\nUSER CONTEXT: {user}" if user else ""
+        hyperparameter_context = format_hyperparameters(hyperparameters)
 
         prompt = f"""Fix the previous code errors.
             Error: {error_preview}
             Data: {Path(path).name} | {rows} rows
             Problem Type: {problem_type or 'classification'}
             Target: {target or 'auto'}{user_context}
+            HYPERPARAMETERS (preserve these values when fixing model constructors):
+            {hyperparameter_context}
 
             Previous code:
             ```python

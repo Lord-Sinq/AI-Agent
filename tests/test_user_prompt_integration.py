@@ -87,3 +87,22 @@ def test_feature_and_modeling_agents_receive_user_context(tmp_path):
     assert "Use interpretable features" in feature_prompt
     assert "USER CONTEXT" in modeling_prompt
     assert "Prioritize explainability" in modeling_prompt
+
+
+def test_modeling_agent_includes_hyperparameters_in_prompt(tmp_path):
+    llm = DummyLLM()
+    modeling_agent = ModelingAgent(llm)
+    data_path = tmp_path / "sample.csv"
+    pd.DataFrame({"age": [20, 30], "target": [0, 1]}).to_csv(data_path, index=False)
+
+    modeling_agent.generate(
+        path=str(data_path),
+        feature_info={"features": ["age"], "scale": [], "encode": {}, "drop": []},
+        problem_type="classification",
+        target="target",
+        hyperparameters={"RandomForestClassifier": {"n_estimators": 25, "random_state": 7}},
+    )
+
+    prompt = llm.prompts[0]["prompt"]
+    assert '"n_estimators": 25' in prompt
+    assert '"random_state": 7' in prompt

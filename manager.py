@@ -11,6 +11,7 @@ from caafeValidator import CAAFEFeatureValidator
 from code_validation_agent import CodeValidationAgent
 from domain_agent import DomainExpertAgent
 from feature_agent import FeatureEngineerAgent
+from hyperparameters import load_hyperparameters
 from openMLAgentLocal import OpenMLAgent
 from modeling_agent import ModelingAgent
 
@@ -40,6 +41,7 @@ class Manager(Agent):
         model: Optional[str] = None,
         max_retry_attempts: int = 5,
         auto_fix: bool = True,
+        hyperparameters: Optional[dict] = None,
     ) -> dict:
         """
         Process with automatic code fixing and improvement.
@@ -54,6 +56,7 @@ class Manager(Agent):
             model: Specific model to use
             max_retry_attempts: Maximum retry attempts for code fixing
             auto_fix: Whether to automatically fix code errors
+            hyperparameters: Model-name keyed hyperparameter configuration
 
         Returns:
             Dictionary with pipeline results including fix attempts
@@ -73,25 +76,19 @@ class Manager(Agent):
                 "modeling": {},
                 "code_validation": {},
                 "validation": {},
-                "code_fixing": {
-                    "attempts": 0,
-                    "success": False,
-                    "history": []
-                }
+                "code_fixing": {"attempts": 0, "success": False, "history": []},
             },
-            "summary": {}
+            "summary": {},
         }
+        if hyperparameters is None:
+            hyperparameters = load_hyperparameters()
+        result["hyperparameters"] = hyperparameters
 
         # --- Domain Analysis ---
         domain_analysis = {}
         if domain:
             print(f"\n[Domain Expert] Analyzing domain: {domain}")
-            domain_result = self.domain_agent.analyze(
-                path=path,
-                user=user,
-                domain=domain,
-                model=model
-            )
+            domain_result = self.domain_agent.analyze(path=path, user=user, domain=domain, model=model)
             domain_analysis = domain_result.get("analysis", {})
             result["pipeline"]["domain_analysis"] = {
                 "domain": domain,
@@ -100,7 +97,7 @@ class Manager(Agent):
                 "business_questions": domain_analysis.get("business_questions", []),
                 "data_quality_issues": domain_analysis.get("data_quality_issues", []),
                 "data_limitations": domain_analysis.get("data_limitations", []),
-                "relevant_context": domain_analysis.get("relevant_context", "")
+                "relevant_context": domain_analysis.get("relevant_context", ""),
             }
             print(f"  Domain insights extracted")
             print(f"  Key metrics identified: {len(domain_analysis.get('key_metrics', []))}")
@@ -112,18 +109,13 @@ class Manager(Agent):
             if similar:
                 result["pipeline"]["domain_analysis"]["openml_context"] = {
                     "similar_count": len(similar),
-                    "top_match": similar[0]["dataset"]["name"] if similar else None
+                    "top_match": similar[0]["dataset"]["name"] if similar else None,
                 }
                 print(f"  Found {len(similar)} similar datasets")
 
         # --- Feature Engineering ---
         print("\n[Feature Engineer] Designing features...")
-        feature_specs = self.feature_agent.analyze(
-            path=path,
-            target=target,
-            user=user,
-            model=model
-        )
+        feature_specs = self.feature_agent.analyze(path=path, target=target, user=user, model=model)
 
         result["pipeline"]["feature_specs"] = {
             "features": feature_specs.get("features", []),
@@ -134,7 +126,7 @@ class Manager(Agent):
             "feature_reasons": feature_specs.get("feature_reasons", ""),
             "feature_notes": feature_specs.get("feature_notes", ""),
             "derived_features": feature_specs.get("derived_features", []),
-            "feature_metadata": feature_specs.get("feature_metadata", {})
+            "feature_metadata": feature_specs.get("feature_metadata", {}),
         }
 
         print(f"  Designed {len(feature_specs.get('features', []))} features")
@@ -173,7 +165,8 @@ class Manager(Agent):
                     problem_type=problem_type,
                     target=target,
                     user=user,
-                    model=model
+                    model=model,
+                    hyperparameters=hyperparameters,
                 )
             else:
                 # Regenerate with error feedback
@@ -185,39 +178,32 @@ class Manager(Agent):
                     problem_type=problem_type,
                     target=target,
                     user=user,
-                    model=model
+                    model=model,
+                    hyperparameters=hyperparameters,
                 )
 
-            code_path = modeling_result.get('code_path')
-            code_generated = modeling_result.get('code_generated', False)
-            code_preview = modeling_result.get('code_preview', "")
+            code_path = modeling_result.get("code_path")
+            code_generated = modeling_result.get("code_generated", False)
+            code_preview = modeling_result.get("code_preview", "")
 
             if not code_generated or not code_path:
                 print(f"  ✗ Failed to generate code on attempt {attempt}")
-                fix_history.append({
-                    "attempt": attempt,
-                    "success": False,
-                    "error": "Code generation failed",
-                    "type": "generation_failure"
-                })
+                fix_history.append({"attempt": attempt, "success": False, "error": "Code generation failed", "type": "generation_failure"})
                 continue
 
             # Validate the generated code
             print(f"\n[Code Validation] Validating generated code (attempt {attempt})...")
             code_validation_result = self.code_validation_agent.validate_code(
-                code_path=str(code_path),
-                data_path=path,
-                target=target,
-                problem_type=problem_type
+                code_path=str(code_path), data_path=path, target=target, problem_type=problem_type
             )
             all_validation_results.append(code_validation_result)
 
             # Check validation results
-            syntax_ok = code_validation_result.get('syntax_ok', False)
-            executed = code_validation_result.get('executed', False)
-            issues = code_validation_result.get('issues', [])
-            warnings = code_validation_result.get('warnings', [])
-            score = code_validation_result.get('score')
+            syntax_ok = code_validation_result.get("syntax_ok", False)
+            executed = code_validation_result.get("executed", False)
+            issues = code_validation_result.get("issues", [])
+            warnings = code_validation_result.get("warnings", [])
+            score = code_validation_result.get("score")
 
             print(f"  Syntax OK: {syntax_ok}")
             print(f"  Executed: {executed}")
@@ -242,23 +228,19 @@ class Manager(Agent):
                 error_type = "syntax_error" if not syntax_ok else "execution_error" if not executed else "validation_error"
 
                 last_error = {
-                    'error_summary': error_summary,
-                    'error_type': error_type,
-                    'syntax_ok': syntax_ok,
-                    'executed': executed,
-                    'issues': issues,
-                    'warnings': warnings,
-                    'attempt': attempt,
-                    'code_preview': code_preview[:500] if code_preview else ""
+                    "error_summary": error_summary,
+                    "error_type": error_type,
+                    "syntax_ok": syntax_ok,
+                    "executed": executed,
+                    "issues": issues,
+                    "warnings": warnings,
+                    "attempt": attempt,
+                    "code_preview": code_preview[:500] if code_preview else "",
                 }
 
-                fix_history.append({
-                    "attempt": attempt,
-                    "success": False,
-                    "error": error_summary,
-                    "error_type": error_type,
-                    "issues_count": len(issues)
-                })
+                fix_history.append(
+                    {"attempt": attempt, "success": False, "error": error_summary, "error_type": error_type, "issues_count": len(issues)}
+                )
 
                 if auto_fix and attempt < max_attempts:
                     print(f"\n  Validation failed. Will retry with error feedback...")
@@ -275,7 +257,7 @@ class Manager(Agent):
             "code_generated": code_generated,
             "code_preview": code_preview,
             "final_attempt": attempt,
-            "validation_passed": validation_passed
+            "validation_passed": validation_passed,
         }
 
         print(f"\n  Problem type: {modeling_result.get('problem_type', 'unknown')}")
@@ -294,11 +276,11 @@ class Manager(Agent):
             result["pipeline"]["code_validation"]["history"] = [
                 {
                     "attempt": i + 1,
-                    "syntax_ok": v.get('syntax_ok', False),
-                    "executed": v.get('executed', False),
-                    "score": v.get('score'),
-                    "issues_count": len(v.get('issues', [])),
-                    "warnings_count": len(v.get('warnings', []))
+                    "syntax_ok": v.get("syntax_ok", False),
+                    "executed": v.get("executed", False),
+                    "score": v.get("score"),
+                    "issues_count": len(v.get("issues", [])),
+                    "warnings_count": len(v.get("warnings", [])),
                 }
                 for i, v in enumerate(all_validation_results)
             ]
@@ -306,7 +288,7 @@ class Manager(Agent):
             result["pipeline"]["code_validation"] = {
                 "executed": False,
                 "issues": ["No validation performed"],
-                "notes": ["Code validation skipped"]
+                "notes": ["Code validation skipped"],
             }
 
         # --- Code fixing history ---
@@ -315,7 +297,7 @@ class Manager(Agent):
             "success": validation_passed,
             "auto_fix_enabled": auto_fix,
             "max_attempts": max_attempts,
-            "history": fix_history
+            "history": fix_history,
         }
 
         # --- CAAFE Performance Validation ---
@@ -328,24 +310,37 @@ class Manager(Agent):
 
         # Detect target if 'auto'
         detected_target = target
-        if target == 'auto' or target is None:
+        if target == "auto" or target is None:
             print("  Auto-detecting target column...")
             # Load data to detect target
-            if path.endswith('.arff'):
+            if path.endswith(".arff"):
                 from scipy.io import arff
+
                 data, meta = arff.loadarff(path)
                 df_temp = pd.DataFrame(data)
-                for col in df_temp.select_dtypes(include=['object']).columns:
+                for col in df_temp.select_dtypes(include=["object"]).columns:
                     try:
                         if df_temp[col].iloc[0] and isinstance(df_temp[col].iloc[0], bytes):
-                            df_temp[col] = df_temp[col].str.decode('utf-8')
+                            df_temp[col] = df_temp[col].str.decode("utf-8")
                     except (IndexError, AttributeError, UnicodeDecodeError):
                         pass
             else:
                 df_temp = pd.read_csv(path)
 
             # Try common target names
-            possible_targets = ['class', 'Class', 'target', 'Target', 'label', 'Label', 'y', 'Y', 'Utility', 'Contraceptive_method_used', 'Response']
+            possible_targets = [
+                "class",
+                "Class",
+                "target",
+                "Target",
+                "label",
+                "Label",
+                "y",
+                "Y",
+                "Utility",
+                "Contraceptive_method_used",
+                "Response",
+            ]
             found_targets = [col for col in df_temp.columns if col in possible_targets]
             if found_targets:
                 detected_target = found_targets[0]
@@ -356,20 +351,21 @@ class Manager(Agent):
                 print(f"  Using last column as target: {detected_target}")
 
         # Now proceed with validation
-        if modeling_result.get('code_generated') and detected_target:
-            code_path = modeling_result.get('code_path')
+        if modeling_result.get("code_generated") and detected_target:
+            code_path = modeling_result.get("code_path")
             if code_path and Path(code_path).exists():
                 try:
                     print("  Loading data for validation...")
-                    if path.endswith('.arff'):
+                    if path.endswith(".arff"):
                         try:
                             from scipy.io import arff
+
                             data, meta = arff.loadarff(path)
                             df = pd.DataFrame(data)
-                            for col in df.select_dtypes(include=['object']).columns:
+                            for col in df.select_dtypes(include=["object"]).columns:
                                 try:
                                     if df[col].iloc[0] and isinstance(df[col].iloc[0], bytes):
-                                        df[col] = df[col].str.decode('utf-8')
+                                        df[col] = df[col].str.decode("utf-8")
                                 except (IndexError, AttributeError, UnicodeDecodeError):
                                     pass
                         except ImportError:
@@ -385,10 +381,7 @@ class Manager(Agent):
                     print(f"  Baseline score: {baseline_score:.4f}")
 
                     print("  Validating model code...")
-                    is_valid, metrics = validator.validate_model_code(
-                        str(code_path),
-                        df
-                    )
+                    is_valid, metrics = validator.validate_model_code(str(code_path), df)
 
                     validation_result = {
                         "validated": is_valid,
@@ -398,7 +391,7 @@ class Manager(Agent):
                         "model_score": metrics.get("score", 0),
                         "improvement": metrics.get("score", 0) - baseline_score if is_valid else 0.0,
                         "issues": metrics.get("issues", []),
-                        "warnings": metrics.get("warnings", [])
+                        "warnings": metrics.get("warnings", []),
                     }
 
                     if is_valid:
@@ -409,25 +402,17 @@ class Manager(Agent):
                         print(f"  Validation FAILED")
                         if validation_result.get("issues"):
                             print(f"  Issues: {len(validation_result['issues'])}")
-                            for issue in validation_result['issues'][:3]:
+                            for issue in validation_result["issues"][:3]:
                                 print(f"    - {issue}")
 
                 except Exception as e:
-                    validation_result = {
-                        "validated": False,
-                        "error": str(e),
-                        "stage": "validation_error"
-                    }
+                    validation_result = {"validated": False, "error": str(e), "stage": "validation_error"}
                     print(f"  Validation error: {e}")
             else:
-                validation_result = {
-                    "validated": False,
-                    "note": "Code file not found for validation",
-                    "stage": "file_not_found"
-                }
+                validation_result = {"validated": False, "note": "Code file not found for validation", "stage": "file_not_found"}
                 print("  Code file not found for validation")
         else:
-            if not modeling_result.get('code_generated'):
+            if not modeling_result.get("code_generated"):
                 validation_result["note"] = "No code generated for validation"
                 print("  No code generated - skipping validation")
             elif not detected_target:
@@ -438,17 +423,17 @@ class Manager(Agent):
 
         # --- Summary ---
         result["summary"] = {
-            "features_count": len(feature_specs.get('features', [])),
-            "problem_type": modeling_result.get('problem_type'),
-            "target": modeling_result.get('target'),
+            "features_count": len(feature_specs.get("features", [])),
+            "problem_type": modeling_result.get("problem_type"),
+            "target": modeling_result.get("target"),
             "code_generated": code_generated,
             "code_validation_passed": validation_passed,
             "attempts_used": attempt,
-            "models": modeling_result.get('recommended_models', []),
-            "validation_passed": validation_result.get('validated', False),
-            "improvement": validation_result.get('improvement') if validation_result.get('validated') else None,
+            "models": modeling_result.get("recommended_models", []),
+            "validation_passed": validation_result.get("validated", False),
+            "improvement": validation_result.get("improvement") if validation_result.get("validated") else None,
             "code_fixed": validation_passed and attempt > 1,
-            "fix_attempts": attempt - 1 if validation_passed else attempt
+            "fix_attempts": attempt - 1 if validation_passed else attempt,
         }
 
         # --- Final Report ---
@@ -467,7 +452,7 @@ class Manager(Agent):
                 if attempt > 1:
                     print(f"  Code fixed after {attempt - 1} attempt(s)")
 
-        if validation_result.get('validated'):
+        if validation_result.get("validated"):
             print(f"  Performance validation: PASSED")
             print(f"  Improvement: {validation_result['improvement']:.4f}")
         else:
@@ -496,10 +481,10 @@ class Manager(Agent):
 
         return {
             "file": path,
-            "target": modeling_result.get('target'),
-            "problem": modeling_result.get('problem_type'),
-            "models": modeling_result.get('recommended_models', [])[:2],
-            "code": modeling_result.get('code_path')
+            "target": modeling_result.get("target"),
+            "problem": modeling_result.get("problem_type"),
+            "models": modeling_result.get("recommended_models", [])[:2],
+            "code": modeling_result.get("code_path"),
         }
 
     def get_improvement_summary(self) -> Dict[str, Any]:
@@ -511,9 +496,13 @@ class Manager(Agent):
         """
         return {
             "total_attempts": sum(1 for h in self.improvement_history),
-            "successful_fixes": sum(1 for h in self.improvement_history if h.get('success', False)),
-            "average_attempts": sum(h.get('attempts', 0) for h in self.improvement_history) / len(self.improvement_history) if self.improvement_history else 0,
-            "history": self.improvement_history[-10:]  # Last 10 improvements
+            "successful_fixes": sum(1 for h in self.improvement_history if h.get("success", False)),
+            "average_attempts": (
+                sum(h.get("attempts", 0) for h in self.improvement_history) / len(self.improvement_history)
+                if self.improvement_history
+                else 0
+            ),
+            "history": self.improvement_history[-10:],  # Last 10 improvements
         }
 
     def _read_file(self, path: str) -> tuple:
@@ -526,15 +515,16 @@ class Manager(Agent):
         Returns:
             Tuple of (df, rows, cols, structure)
         """
-        if path.endswith('.arff'):
+        if path.endswith(".arff"):
             try:
                 from scipy.io import arff
+
                 data, meta = arff.loadarff(path)
                 df = pd.DataFrame(data)
-                for col in df.select_dtypes(include=['object']).columns:
+                for col in df.select_dtypes(include=["object"]).columns:
                     try:
                         if df[col].iloc[0] and isinstance(df[col].iloc[0], bytes):
-                            df[col] = df[col].str.decode('utf-8')
+                            df[col] = df[col].str.decode("utf-8")
                     except (IndexError, AttributeError, UnicodeDecodeError):
                         pass
             except ImportError:
@@ -544,11 +534,11 @@ class Manager(Agent):
 
         rows, cols = df.shape
         structure = {
-            'rows': rows,
-            'columns': cols,
-            'column_names': df.columns.tolist(),
-            'dtypes': df.dtypes.astype(str).to_dict(),
-            'sample': df.head(3).to_dict('records')
+            "rows": rows,
+            "columns": cols,
+            "column_names": df.columns.tolist(),
+            "dtypes": df.dtypes.astype(str).to_dict(),
+            "sample": df.head(3).to_dict("records"),
         }
 
         return df, rows, cols, structure
