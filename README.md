@@ -1,40 +1,41 @@
 # AI-Agent
 
-AI-Agent is a Python CLI for tabular-data analysis and machine-learning code generation. It reads CSV or ARFF files, recommends feature engineering steps, generates training code, validates the result, and can automatically retry with fixes when the first pass fails.
+AI-Agent is a Python application for tabular-data analysis and machine-learning code generation. It supports an interactive CLI and working on a Textual terminal dashboard (TUI). The pipeline reads CSV or ARFF files, uses Azure OpenAI for structured analysis, generates training code, validates it, and retries failed generations with error feedback.
 
-## What the project does now
+## Features
 
-- Reads datasets from the data folder
-- Uses Azure OpenAI for structured analysis and code generation
-- Recommends features to keep, scale, encode, and drop
-- Produces Python machine-learning scripts in the generated_code folder
-- Validates generated code with syntax and execution checks
-- Automatically retries and improves code when validation finds errors
-- Optionally uses local OpenML-style context for similar datasets
-- Saves LLM responses for debugging in the responses folder
+- Dataset selection and inspection from `data/`
+- Optional domain-specific analysis
+- Feature recommendations for keeping, scaling, encoding, dropping, and deriving columns
+- Local OpenML-style similarity context from `openMLdatasets/`
+- Generated model scripts in `generated_code/`
+- Syntax, execution, and model-performance validation
+- Automatic code-fix retries, with up to five attempts by default
+- Optional structured response logging in `responses/<date>/`
+- Strict JSON output mode for LLM responses
 
-## Prerequisites
+## Requirements
 
-- Docker Desktop installed and running
-- Azure OpenAI credentials
+- Python 3.13 recommended (the Dockerfile uses `python:3.13-slim`)
+- Azure OpenAI endpoint, API key, and deployment
 - Git
+- Docker Desktop, if using the container workflow
 
-## Quick start with Docker
-
-### 1. Clone the repository
+Install the Python dependencies with:
 
 ```bash
-git clone https://github.com/Lord-Sinq/AI-Agent
-cd AI-Agent
+pip install -r requirements.txt
 ```
 
-### 2. Configure environment variables
+The current dependencies include `pandas`, `numpy`, `scipy`, `scikit-learn`, `requests`, `python-dotenv`, and `textual`.
+
+## Configuration
+
+Copy the example environment file and fill in the Azure values:
 
 ```bash
 cp .env.example .env
 ```
-
-Update .env with your Azure OpenAI settings:
 
 ```env
 AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
@@ -42,92 +43,105 @@ AZURE_OPENAI_API_KEY=your-api-key
 AZURE_DEPLOYMENT_NAME=your-deployment
 AZURE_API_VERSION=2024-02-15-preview
 DEFAULT_MODEL=gpt-4o-mini
-SAVE_RESPONSES=true
+STRICT_JSON_MODE=true
 ```
 
-### 3. Build and start the container
+`SAVE_RESPONSES` can be set to `true` or `false`. It can also be controlled with `--save-responses` and `--no-save-responses`; in interactive CLI mode, the application asks when no value is configured. `OPENML_DATASETS_DIR` can override the default local dataset directory `openMLdatasets/`.
 
-```bash
-docker-compose build
-docker-compose up -d
-```
+The OpenML agent currently uses the local dataset index and does not require a network lookup. The optional `OPENML_API_KEY`, `OPENML_TIMEOUT`, and `OPENML_MAX_RETRIES` values in `.env.example` are retained for related OpenML tooling.
 
-### 4. Run the app inside the container
+## Run locally
 
-```bash
-docker-compose run --rm ai-agent python main.py
-```
-
-## Docker commands
-
-```bash
-docker-compose build
-docker-compose up -d
-docker-compose down
-docker ps
-docker logs ai-agent
-```
-
-## Main commands
+The CLI scans `data/` for `.csv` and `.arff` files. The repository currently includes example ARFF datasets such as `dataset_11_balance-scale.arff` and `dataset_titanic.arff`.
 
 ```bash
 python main.py
-python main.py --file data/employees.csv
-python main.py --file data/medical_patients.csv --domain healthcare
+python main.py --file data/dataset_titanic.arff
+python main.py --file data/dataset_titanic.arff --domain healthcare --target class
+python main.py --file data/dataset_titanic.arff --problem classification --model gpt-4o-mini
 python main.py --list-deployments
-python main.py --quiet --no-openml
+python main.py --file data/dataset_titanic.arff --no-openml --no-save-responses
 ```
 
-## How the current workflow works
+### CLI controls
 
-1. File selection and basic dataset inspection
-2. Optional domain analysis
-3. Feature engineering recommendations
-4. Model code generation
-5. Code validation and auto-fix retries
-6. Output summary plus generated script files
+- `-f`, `--file`: use a specific CSV or ARFF dataset instead of choosing one interactively.
+- `-m`, `--model`: select the Azure OpenAI deployment or model to use.
+- `-d`, `--domain`: provide a domain such as healthcare, retail, or ecology for additional context.
+- `-t`, `--task`: describe the analysis or machine-learning task.
+- `--target`: specify the target column for prediction.
+- `--problem`: set the problem type to `classification`, `regression`, or `clustering`.
+- `--list-deployments`: list the Azure deployments available to the configured account.
+- `--save-responses`: save LLM responses for debugging under `responses/`.
+- `--no-save-responses`: disable LLM response saving for the current run.
+- `-q`, `--quiet`: reduce console output and skip the response-saving prompt.
+- `--no-openml`: skip the local similarity search in `openMLdatasets/`.
 
-## Outputs
+The data-description prompt is currently shown after file selection even when `--quiet` is supplied, so provide input when running the CLI interactively.
 
-- Console summary of selected features, target, and recommended models
-- Python files written to generated_code/
-- Validation details and retry history in the pipeline output
-- Saved LLM responses in responses/
+## Textual dashboard
+
+Launch the terminal UI with:
+
+```bash
+python ml_dashboard.py
+```
+
+The dashboard lets you select a dataset, set the target/domain/model, choose a problem type, enable or disable local OpenML context and response saving, run the full pipeline, run debug steps, and inspect results. It uses `style.tcss` for its layout and styling.
+
+## Docker development workflow
+
+```bash
+docker-compose build
+docker-compose up -d
+docker exec -it ai-agent bash
+python main.py
+```
+
+The Compose service keeps the container alive with `tail -f /dev/null` and mounts the repository for development. The active volume entry is configured for macOS; on Linux, enable the Linux `.:/app` volume in `docker-compose.yml` before running the container. The image currently copies only a subset of the application modules, so the mounted repository is required for the full pipeline.
+
+Stop the service with:
+
+```bash
+docker-compose down
+```
+
+## Workflow and outputs
+
+1. Select or provide a dataset path and optional user description.
+2. Optionally analyze the domain and find similar local OpenML datasets.
+3. Design feature engineering steps.
+4. Generate model code.
+5. Validate syntax and execution, then retry with feedback when needed.
+6. Run the performance validation stage and print a summary.
+
+Generated scripts are saved in `generated_code/`. A retry may create both `<dataset>_model.py` and `<dataset>_model_fixed.py`. The CLI also prints the generated code preview, validation summary, response directory when enabled, and total runtime. Structured LLM and validator responses are saved under `responses/` when response saving is enabled.
 
 ## Project structure
 
 ```text
 AI-Agent/
-├── data/                  # Datasets
+├── data/                  # Input CSV and ARFF datasets
+├── openMLdatasets/        # Local OpenML-style datasets and index
 ├── generated_code/        # Generated ML scripts
-├── responses/             # Saved LLM responses
+├── responses/             # Saved LLM responses by date
 ├── main.py                # CLI entry point
-├── manager.py             # Orchestrator for the pipeline
-├── feature_agent.py       # Feature engineering agent
-├── modeling_agent.py      # Model generation agent
+├── ml_dashboard.py        # Textual terminal dashboard
+├── manager.py             # Pipeline orchestrator
+├── domain_agent.py        # Domain analysis
+├── feature_agent.py       # Feature engineering
+├── modeling_agent.py      # Model code generation
 ├── code_validation_agent.py
-├── domain_agent.py
+├── openMLAgentLocal.py    # Local similarity lookup
 ├── llms.py                # Azure OpenAI integration
+├── style.tcss             # Dashboard styling
 └── requirements.txt
 ```
 
 ## Troubleshooting
 
-- If Azure OpenAI is not configured, run: `python main.py --list-deployments`
-- If no files are found, place CSV or ARFF files in the data folder
-- If the generated code fails validation, the app will retry with feedback and save a fixed version in generated_code/
-- If response logging is useful, keep SAVE_RESPONSES=true
-
-## Requirements
-
-- pandas>=3.0.3
-- numpy>=2.4.6
-- scikit-learn>=1.9.0
-- xgboost>=3.2.0
-- python-dotenv>=1.0.0
-- requests>=2.31.0
-- scipy>=1.10.0
-
-## Notes
-
-The repository is currently focused on a practical, end-to-end workflow: analyze a dataset, generate useful ML code, and improve that code through validation rather than stopping at a first draft.
+- Run `python main.py --list-deployments` to test Azure configuration and list deployments.
+- If no datasets are found, place a `.csv` or `.arff` file in `data/`.
+- If ARFF files cannot be read, reinstall the dependencies so `scipy` is available.
+- If generated code fails validation, inspect the retry history and the generated files; the pipeline automatically sends validation errors back to the model.
+- Set `SAVE_RESPONSES=true` or pass `--save-responses` when debugging model and validator output.

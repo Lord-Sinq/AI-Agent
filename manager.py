@@ -319,12 +319,12 @@ class Manager(Agent):
         }
 
         # --- CAAFE Performance Validation ---
-        print("\n[CAAFE Validator] Validating generated model code performance...")
-        validation_result = {
-            "validated": False,
-            "stage": "post_modeling",
-            "metrics": {}
-        }
+        # print("\n[CAAFE Validator] Validating generated model code performance...")
+        # validation_result = {
+        #     "validated": False,
+        #     "stage": "post_modeling",
+        #     "metrics": {}
+        # }
 
         # Detect target if 'auto'
         detected_target = target

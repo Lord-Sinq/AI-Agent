@@ -1,0 +1,82 @@
+<mxfile host="65bd71144e">
+    <diagram id="C5RBs43oDa-KdzZeNtuy" name="Page-1">
+        <mxGraphModel dx="1057" dy="551" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+            <root>
+                <mxCell id="WIyWlLk6GJQsqaUBKTNV-0"/>
+                <mxCell id="WIyWlLk6GJQsqaUBKTNV-1" parent="WIyWlLk6GJQsqaUBKTNV-0"/>
+                <mxCell id="WIyWlLk6GJQsqaUBKTNV-3" value="&lt;div&gt;&lt;b&gt;Data Input&lt;/b&gt;&lt;/div&gt;Adding data files to data folder" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;glass=0;strokeWidth=1;shadow=0;" parent="WIyWlLk6GJQsqaUBKTNV-1" vertex="1">
+                    <mxGeometry width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="WIyWlLk6GJQsqaUBKTNV-12" value="&lt;div&gt;&lt;b&gt;Run&lt;/b&gt;&lt;/div&gt;&lt;div&gt;python main.py&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;glass=0;strokeWidth=1;shadow=0;" parent="WIyWlLk6GJQsqaUBKTNV-1" vertex="1">
+                    <mxGeometry x="150" y="10" width="120" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="IBChzk-apwxziMJY8GuM-0" value="Data loading &amp;amp; analysis of data type" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;glass=0;strokeWidth=1;shadow=0;" parent="WIyWlLk6GJQsqaUBKTNV-1" vertex="1">
+                    <mxGeometry y="85" width="120" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="IBChzk-apwxziMJY8GuM-2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitX=0;exitY=1;exitDx=0;exitDy=0;" parent="WIyWlLk6GJQsqaUBKTNV-1" source="WIyWlLk6GJQsqaUBKTNV-12" target="IBChzk-apwxziMJY8GuM-0" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="220" y="183" as="sourcePoint"/>
+                        <mxPoint x="340" y="120" as="targetPoint"/>
+                        <Array as="points">
+                            <mxPoint x="150" y="70"/>
+                            <mxPoint x="60" y="70"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="IBChzk-apwxziMJY8GuM-3" value="&lt;div&gt;&lt;b&gt;Worker 1: Domain&lt;/b&gt;&lt;/div&gt;&lt;div&gt;Adds domain prompt&lt;/div&gt;&lt;div&gt;working on adding domain data&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;glass=0;strokeWidth=1;shadow=0;" parent="WIyWlLk6GJQsqaUBKTNV-1" vertex="1">
+                    <mxGeometry x="160" y="70" width="120" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="IBChzk-apwxziMJY8GuM-4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" parent="WIyWlLk6GJQsqaUBKTNV-1" source="IBChzk-apwxziMJY8GuM-0" target="IBChzk-apwxziMJY8GuM-3" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="220" y="270" as="sourcePoint"/>
+                        <mxPoint x="220" y="307" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="IBChzk-apwxziMJY8GuM-5" value="&lt;div&gt;&lt;b&gt;Worker 2: Feature Engineer&lt;/b&gt;&lt;/div&gt;Send the data structure to ChatGPT for feature recommendations" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;glass=0;strokeWidth=1;shadow=0;" parent="WIyWlLk6GJQsqaUBKTNV-1" vertex="1">
+                    <mxGeometry y="160" width="170" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="IBChzk-apwxziMJY8GuM-6" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" parent="WIyWlLk6GJQsqaUBKTNV-1" source="IBChzk-apwxziMJY8GuM-3" target="0" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="290" y="280" as="sourcePoint"/>
+                        <mxPoint x="290" y="310" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="IBChzk-apwxziMJY8GuM-7" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" parent="WIyWlLk6GJQsqaUBKTNV-1" source="WIyWlLk6GJQsqaUBKTNV-3" target="WIyWlLk6GJQsqaUBKTNV-12" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="230" y="120" as="sourcePoint"/>
+                        <mxPoint x="230" y="150" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="IBChzk-apwxziMJY8GuM-12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="WIyWlLk6GJQsqaUBKTNV-1" source="IBChzk-apwxziMJY8GuM-8" target="IBChzk-apwxziMJY8GuM-10" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="IBChzk-apwxziMJY8GuM-8" value="&lt;div&gt;&lt;b&gt;Worker 3: Model Code Generation&lt;/b&gt;&lt;/div&gt;&lt;div&gt;Sends all workers data responses to ChatGPT to build working code model for the data provided&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;glass=0;strokeWidth=1;shadow=0;" parent="WIyWlLk6GJQsqaUBKTNV-1" vertex="1">
+                    <mxGeometry y="260" width="220" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="IBChzk-apwxziMJY8GuM-13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitX=0.25;exitY=1;exitDx=0;exitDy=0;" parent="WIyWlLk6GJQsqaUBKTNV-1" source="IBChzk-apwxziMJY8GuM-10" target="IBChzk-apwxziMJY8GuM-11" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="320" y="350"/>
+                            <mxPoint x="235" y="350"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="IBChzk-apwxziMJY8GuM-10" value="&lt;div&gt;&lt;b&gt;Worker 3 part 2: Self-Healing Validation Loop&lt;/b&gt;&lt;/div&gt;&lt;div&gt;Attempt up to 5 times to fix any errors ,bad practices, or malicious code&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;glass=0;strokeWidth=1;shadow=0;" parent="WIyWlLk6GJQsqaUBKTNV-1" vertex="1">
+                    <mxGeometry x="240" y="255" width="280" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="IBChzk-apwxziMJY8GuM-11" value="&lt;div&gt;&lt;b&gt;OUTPUT:&lt;/b&gt;&lt;/div&gt;&lt;div&gt;Shows the pipeline and summary of the workflow&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;glass=0;strokeWidth=1;shadow=0;" parent="WIyWlLk6GJQsqaUBKTNV-1" vertex="1">
+                    <mxGeometry x="160" y="370" width="150" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="1" style="edgeStyle=none;html=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="0" target="IBChzk-apwxziMJY8GuM-5">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="0" value="&lt;div&gt;&lt;b&gt;OpenML:&lt;/b&gt;&lt;/div&gt;&lt;div&gt;Adds related openml files to help with feature engineering&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;glass=0;strokeWidth=1;shadow=0;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+                    <mxGeometry x="190" y="160" width="107.5" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="2" style="edgeStyle=none;html=1;entryX=0.382;entryY=0.021;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="IBChzk-apwxziMJY8GuM-5" target="IBChzk-apwxziMJY8GuM-8">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
