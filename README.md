@@ -61,7 +61,7 @@ python main.py --file data/dataset_titanic.arff --domain healthcare --target cla
 python main.py --file data/dataset_titanic.arff --problem classification --model gpt-4o-mini
 python main.py --list-deployments
 python main.py --file data/dataset_titanic.arff --no-openml --no-save-responses
-python main.py --file data/dataset_titanic.arff --hyperparameters config/hyperparameters.json
+python main.py --file data/dataset_titanic.arff --no-hyperparameters
 ```
 
 ### CLI controls
@@ -78,8 +78,13 @@ python main.py --file data/dataset_titanic.arff --hyperparameters config/hyperpa
 - `-q`, `--quiet`: reduce console output and skip the response-saving prompt.
 - `--no-openml`: skip the local similarity search in `openMLdatasets/`.
 - `--hyperparameters`: use a JSON file mapping model names to constructor parameters. Defaults to `config/hyperparameters.json`.
+- `--no-hyperparameters`: disable configured model hyperparameters for the current run. They are enabled by default.
 
 The data-description prompt is currently shown after file selection even when `--quiet` is supplied, so provide input when running the CLI interactively.
+
+### Related research papers
+
+Related papers can be mapped to datasets in `dataPapers/index.json`. The pipeline extracts and summarizes a mapped PDF once, caches the structured result in `dataPapers/.cache/`, and passes that evidence to feature engineering and modeling. The dataset columns remain authoritative, and a missing or unreadable paper does not stop the pipeline. Install dependencies with `pip install -r requirements.txt` to enable PDF extraction.
 
 ## Textual dashboard
 
@@ -121,7 +126,7 @@ Generated scripts are saved in `generated_code/`. A retry may create both `<data
 
 ### Hyperparameter configuration
 
-Model settings are stored in `config/hyperparameters.json` and included in the modeling and code-fix prompts. Each key is a model class name and each value is a JSON object of constructor parameters. Use `--hyperparameters PATH` to run an experiment with a different configuration. The selected configuration is included in the pipeline result for reproducibility.
+Model settings are stored in `config/hyperparameters.json` and included in the modeling and code-fix prompts by default. Each key is a model class name and each value is a JSON object of constructor parameters. Use `--hyperparameters PATH` to run an experiment with a different configuration, or `--no-hyperparameters` to omit them for a run. The selected configuration is included in the pipeline result for reproducibility.
 
 ## Project structure
 

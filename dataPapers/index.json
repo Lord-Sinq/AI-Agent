@@ -1,0 +1,6 @@
+{
+  "openml_breast_w.arff": {
+    "paper": "nuclear-feature-extraction-for-breast-tumor-diagnosis-50z8xjvdcw.pdf",
+    "description": "Breast tumor nuclear feature extraction and diagnosis"
+  }
+}

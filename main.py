@@ -71,7 +71,7 @@ def parse_args():
         python main.py -f data/sales.csv -d retail       # Specify file and domain
         python main.py --save-responses                  # Enable response saving
         python main.py --list-deployments                # List Azure models
-        python main.py --quiet --no-openml               # Silent mode, no OpenML
+        python main.py --quiet --no-openml --no-hyperparameters  # Disable optional context/config
                 """,
     )
 
@@ -86,6 +86,7 @@ def parse_args():
     p.add_argument("--no-save-responses", action="store_true", help="Don't save responses")
     p.add_argument("--quiet", "-q", action="store_true", help="Suppress prompts")
     p.add_argument("--no-openml", action="store_true", help="Disable OpenML")
+    p.add_argument("--no-hyperparameters", action="store_true", help="Disable configured model hyperparameters")
     p.add_argument(
         "--hyperparameters",
         metavar="PATH",
@@ -183,11 +184,13 @@ def main():
 
     setup_save_responses(args)
 
-    try:
-        hyperparameters = load_hyperparameters(args.hyperparameters)
-    except (OSError, ValueError, json.JSONDecodeError) as e:
-        print(f"Invalid hyperparameter configuration: {e}")
-        return 1
+    hyperparameters = None
+    if not args.no_hyperparameters:
+        try:
+            hyperparameters = load_hyperparameters(args.hyperparameters)
+        except (OSError, ValueError, json.JSONDecodeError) as e:
+            print(f"Invalid hyperparameter configuration: {e}")
+            return 1
 
     try:
         llm = LLMManager()
@@ -227,6 +230,7 @@ def main():
             use_openml=not args.no_openml,
             model=args.model,
             hyperparameters=hyperparameters,
+            use_hyperparameters=not args.no_hyperparameters,
         )
 
         print("\nPipeline complete!")

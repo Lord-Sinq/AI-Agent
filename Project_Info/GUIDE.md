@@ -40,8 +40,14 @@ python main.py --file data/dataset_194_eucalyptus.arff --domain ecology --no-ope
 - `--no-save-responses`: disable LLM response saving for the current run.
 - `-q`, `--quiet`: reduce console output and skip the response-saving prompt.
 - `--no-openml`: skip the local similarity search in `openMLdatasets/`.
+- `--hyperparameters PATH`: use model constructor parameters from a JSON file; defaults to `config/hyperparameters.json`.
+- `--no-hyperparameters`: disable configured model hyperparameters for the run. They are enabled by default.
 
 Use `python main.py --help` for the complete list. The CLI currently asks for an optional data description after selecting a file; press Enter to leave it blank.
+
+### Related research papers
+
+Map a dataset filename to a PDF in `dataPapers/index.json`. The pipeline summarizes the mapped paper once, caches the structured evidence in `dataPapers/.cache/`, and shares that evidence with the feature and modeling agents. The dataset itself remains authoritative.
 
 ## Run the dashboard (working progress/not done)
 

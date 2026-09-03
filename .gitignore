@@ -66,5 +66,6 @@ htmlcov/
 data/
 responses/
 openml_cache/
+dataPapers/.cache/
 generated_code/
 docker-compose.yml

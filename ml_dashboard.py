@@ -16,11 +16,12 @@ from textual.reactive import reactive
 from llms import LLMManager
 from manager import Manager
 
+
 def sanitize_id(name: str) -> str:
     """Convert a string to a valid Textual ID."""
-    sanitized = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
+    sanitized = re.sub(r"[^a-zA-Z0-9_-]", "_", name)
     if sanitized and sanitized[0].isdigit():
-        sanitized = '_' + sanitized
+        sanitized = "_" + sanitized
     return sanitized
 
 
@@ -43,15 +44,16 @@ class MLDashboard(App):
 
         # Configuration flags (matches your CLI args)
         self.config = {
-            'task': 'Analyze data and provide ML code',
-            'domain': None,
-            'target': None,
-            'problem_type': None,
-            'use_openml': True,
-            'model': None,
-            'quiet': False,
-            'save_responses': False,
-            'list_deployments': False,
+            "task": "Analyze data and provide ML code",
+            "domain": None,
+            "target": None,
+            "problem_type": None,
+            "use_openml": True,
+            "use_hyperparameters": True,
+            "model": None,
+            "quiet": False,
+            "save_responses": False,
+            "list_deployments": False,
         }
 
         # Available datasets
@@ -62,7 +64,7 @@ class MLDashboard(App):
         """Scan data directory for available datasets."""
         data_dir = Path("data")
         if data_dir.exists():
-            self.datasets = [f for f in data_dir.iterdir() if f.suffix in ['.csv', '.arff']]
+            self.datasets = [f for f in data_dir.iterdir() if f.suffix in [".csv", ".arff"]]
         else:
             self.datasets = []
 
@@ -73,7 +75,7 @@ class MLDashboard(App):
         """Truncate a filename to fit in a button."""
         name = Path(name).stem  # Remove extension
         if len(name) > max_len:
-            return name[:max_len - 3] + "..."
+            return name[: max_len - 3] + "..."
         return name
 
     def compose(self) -> ComposeResult:
@@ -93,7 +95,7 @@ class MLDashboard(App):
                         with ScrollableContainer(id="dataset-list"):
                             if self.datasets:
                                 for dataset in self.datasets:
-                                    is_selected = (self.current_file == str(dataset))
+                                    is_selected = self.current_file == str(dataset)
                                     variant = "success" if is_selected else "default"
                                     safe_id = sanitize_id(dataset.name)
                                     name = self.truncate_name(dataset.name, 30)
@@ -113,7 +115,7 @@ class MLDashboard(App):
                             RadioButton("Auto Detect", id="prob-auto", value=True),
                             RadioButton("Classification", id="prob-class"),
                             RadioButton("Regression", id="prob-reg"),
-                            id="problem-type"
+                            id="problem-type",
                         )
 
                         yield Input(placeholder="Target column (optional)", id="target-input")
@@ -124,6 +126,7 @@ class MLDashboard(App):
                     with Container(classes="flags-box"):
                         yield Static("Runtime Flags:", classes="section-label")
                         yield Checkbox("Use OpenML", id="openml-check", value=True)
+                        yield Checkbox("Use Hyperparameters", id="hyperparameters-check", value=True)
                         yield Checkbox("Save LLM Responses", id="save-resp-check", value=False)
                         yield Checkbox("Quiet Mode", id="quiet-check", value=False)
                         yield Checkbox("List Deployments", id="list-deploy-check", value=False)
@@ -183,34 +186,36 @@ class MLDashboard(App):
         if event.radio_set.id == "problem-type":
             selected = event.radio_set.pressed_button.id
             if selected == "prob-auto":
-                self.config['problem_type'] = None
+                self.config["problem_type"] = None
             elif selected == "prob-class":
-                self.config['problem_type'] = 'classification'
+                self.config["problem_type"] = "classification"
             elif selected == "prob-reg":
-                self.config['problem_type'] = 'regression'
+                self.config["problem_type"] = "regression"
 
     def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
         """Handle checkbox changes."""
         checkbox_id = event.checkbox.id
 
         if checkbox_id == "openml-check":
-            self.config['use_openml'] = event.value
+            self.config["use_openml"] = event.value
+        elif checkbox_id == "hyperparameters-check":
+            self.config["use_hyperparameters"] = event.value
         elif checkbox_id == "save-resp-check":
-            self.config['save_responses'] = event.value
+            self.config["save_responses"] = event.value
             os.environ["SAVE_RESPONSES"] = "true" if event.value else "false"
         elif checkbox_id == "quiet-check":
-            self.config['quiet'] = event.value
+            self.config["quiet"] = event.value
         elif checkbox_id == "list-deploy-check":
-            self.config['list_deployments'] = event.value
+            self.config["list_deployments"] = event.value
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle input submissions."""
         if event.input.id == "target-input":
-            self.config['target'] = event.value if event.value else None
+            self.config["target"] = event.value if event.value else None
         elif event.input.id == "domain-input":
-            self.config['domain'] = event.value if event.value else None
+            self.config["domain"] = event.value if event.value else None
         elif event.input.id == "model-input":
-            self.config['model'] = event.value if event.value else None
+            self.config["model"] = event.value if event.value else None
 
     # ============= PIPELINE EXECUTION =============
 
@@ -261,7 +266,7 @@ class MLDashboard(App):
         try:
             log.write("\n[bold blue]Running full pipeline...[/]")
 
-            if self.config.get('list_deployments', False):
+            if self.config.get("list_deployments", False):
                 log.write("[bold]Listing available deployments...[/]")
                 try:
                     deployments = self.llm.list_azure_deployments()
@@ -275,12 +280,13 @@ class MLDashboard(App):
 
             result = self.manager.process(
                 path=self.current_file,
-                task=self.config['task'],
-                domain=self.config['domain'],
-                target=self.config['target'],
-                problem_type=self.config['problem_type'],
-                use_openml=self.config['use_openml'],
-                model=self.config['model']
+                task=self.config["task"],
+                domain=self.config["domain"],
+                target=self.config["target"],
+                problem_type=self.config["problem_type"],
+                use_openml=self.config["use_openml"],
+                use_hyperparameters=self.config["use_hyperparameters"],
+                model=self.config["model"],
             )
 
             self.results = result
@@ -294,12 +300,12 @@ class MLDashboard(App):
                 log.write(f"  Problem Type: {summary.get('problem_type', 'N/A')}")
                 log.write(f"  Target: {summary.get('target', 'N/A')}")
                 log.write(f"  Code Generated: {summary.get('code_generated', False)}")
-                models = summary.get('models', [])
+                models = summary.get("models", [])
                 if models:
                     log.write(f"  Models: {', '.join(models)}")
-                if summary.get('validation_passed'):
+                if summary.get("validation_passed"):
                     log.write(f"[green]  Validation Passed[/]")
-                    if summary.get('improvement') is not None:
+                    if summary.get("improvement") is not None:
                         log.write(f"  Improvement: {summary['improvement']:+.4f}")
                 else:
                     log.write(f"[yellow]  Validation Failed[/]")
@@ -322,6 +328,7 @@ class MLDashboard(App):
         except Exception as e:
             log.write(f"\n[red]Pipeline failed: {e}[/]")
             import traceback
+
             log.write(f"[dim]{traceback.format_exc()}[/]")
             status.update("Pipeline Failed")
 
@@ -364,12 +371,13 @@ class MLDashboard(App):
         try:
             result = self.manager.process(
                 path=self.current_file,
-                task=self.config['task'],
-                domain=self.config['domain'],
-                target=self.config['target'],
-                problem_type=self.config['problem_type'],
-                use_openml=self.config['use_openml'],
-                model=self.config['model']
+                task=self.config["task"],
+                domain=self.config["domain"],
+                target=self.config["target"],
+                problem_type=self.config["problem_type"],
+                use_openml=self.config["use_openml"],
+                use_hyperparameters=self.config["use_hyperparameters"],
+                model=self.config["model"],
             )
             self.results = result
             log.write(f"[green]{step} complete![/]")
@@ -393,32 +401,32 @@ class MLDashboard(App):
         lines.append("PIPELINE RESULTS")
         lines.append("-" * 30)
 
-        pipeline = self.results.get('pipeline', {})
+        pipeline = self.results.get("pipeline", {})
 
-        features = pipeline.get('feature_specs', {})
+        features = pipeline.get("feature_specs", {})
         if features:
             lines.append(f"Features: {len(features.get('features', []))}")
 
-        modeling = pipeline.get('modeling', {})
+        modeling = pipeline.get("modeling", {})
         if modeling:
             lines.append(f"Problem: {modeling.get('problem_type', 'N/A')}")
             lines.append(f"Target: {modeling.get('target', 'N/A')}")
-            models = modeling.get('recommended_models', [])
+            models = modeling.get("recommended_models", [])
             if models:
                 lines.append(f"Models: {', '.join(models)}")
             lines.append(f"Code Generated: {modeling.get('code_generated', False)}")
 
-        validation = pipeline.get('code_validation', {})
+        validation = pipeline.get("code_validation", {})
         if validation:
-            score = validation.get('score')
+            score = validation.get("score")
             lines.append(f"Score: {score:.4f}" if score is not None else "Score: N/A")
             lines.append(f"Issues: {len(validation.get('issues', []))}")
 
-        perf = pipeline.get('validation', {})
-        if perf and perf.get('validated'):
+        perf = pipeline.get("validation", {})
+        if perf and perf.get("validated"):
             lines.append(f"Improvement: {perf.get('improvement', 0):+.4f}")
 
-        summary = self.results.get('summary', {})
+        summary = self.results.get("summary", {})
         if summary:
             lines.append(f"Validation: {'PASSED' if summary.get('validation_passed') else 'FAILED'}")
 
@@ -453,6 +461,7 @@ def main():
     except Exception as e:
         print(f"Error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 

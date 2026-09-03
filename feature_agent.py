@@ -4,12 +4,20 @@ import json
 from typing import Any, Dict, List, Optional
 
 from base_agent import Agent
+from paper_context import format_paper_context
 
 
 class FeatureEngineerAgent(Agent):
     """Feature engineering recommendations agent."""
 
-    def analyze(self, path: str, target: Optional[str] = None, user: Optional[str] = None, model: Optional[str] = None) -> dict:
+    def analyze(
+        self,
+        path: str,
+        target: Optional[str] = None,
+        user: Optional[str] = None,
+        model: Optional[str] = None,
+        paper_context: Optional[dict] = None,
+    ) -> dict:
         content, mt, text, structure = self._read_file(path)
 
         headers = structure.get("headers", [])
@@ -17,12 +25,13 @@ class FeatureEngineerAgent(Agent):
         rows = structure.get("rows", 0)
 
         user_context = f"\nUSER CONTEXT: {user}" if user else ""
+        paper_evidence = format_paper_context(paper_context)
 
         prompt = f"""DATA: {path}
             ROWS: {rows}
             COLS: {headers}
             TYPES: {data_types}
-            TARGET: {target if target else 'auto'}{user_context}
+            TARGET: {target if target else 'auto'}{user_context}{paper_evidence}
 
             You are a data scientist prformming feature-engineering.
             Your final answer must be only one valid JSON object.

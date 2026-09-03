@@ -7,6 +7,7 @@ from typing import Any, Optional
 
 from base_agent import Agent
 from hyperparameters import format_hyperparameters
+from paper_context import format_paper_context
 
 
 class ModelingAgent(Agent):
@@ -21,6 +22,7 @@ class ModelingAgent(Agent):
         user: Optional[str] = None,
         model: Optional[str] = None,
         hyperparameters: Optional[dict] = None,
+        paper_context: Optional[dict] = None,
     ) -> dict:
         content, mt, text, structure = self._read_file(path)
 
@@ -64,9 +66,10 @@ class ModelingAgent(Agent):
 
         user_context = f"\nUSER CONTEXT: {user}" if user else ""
         hyperparameter_context = format_hyperparameters(hyperparameters)
+        paper_evidence = format_paper_context(paper_context)
 
         prompt = f"""{Path(path).name} | {rows} rows | {len(headers)} cols | FORMAT: {file_format}
-            Target: {target or 'auto'}{feature_context}{user_context}
+            Target: {target or 'auto'}{feature_context}{user_context}{paper_evidence}
             HYPERPARAMETERS (use these values when instantiating matching models):
             {hyperparameter_context}
             From feature_context grab the recomended features, use it to transform the dataset before modeling.
@@ -220,6 +223,7 @@ class ModelingAgent(Agent):
         user=None,
         model=None,
         hyperparameters=None,
+        paper_context=None,
     ):
         """
         Regenerate code with error feedback for fixing.
@@ -247,12 +251,13 @@ class ModelingAgent(Agent):
 
         user_context = f"\nUSER CONTEXT: {user}" if user else ""
         hyperparameter_context = format_hyperparameters(hyperparameters)
+        paper_evidence = format_paper_context(paper_context)
 
         prompt = f"""Fix the previous code errors.
             Error: {error_preview}
             Data: {Path(path).name} | {rows} rows
             Problem Type: {problem_type or 'classification'}
-            Target: {target or 'auto'}{user_context}
+            Target: {target or 'auto'}{user_context}{paper_evidence}
             HYPERPARAMETERS (preserve these values when fixing model constructors):
             {hyperparameter_context}
 

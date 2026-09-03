@@ -14,6 +14,7 @@ from feature_agent import FeatureEngineerAgent
 from hyperparameters import load_hyperparameters
 from openMLAgentLocal import OpenMLAgent
 from modeling_agent import ModelingAgent
+from paper_context import PaperContextAgent
 
 
 class Manager(Agent):
@@ -25,6 +26,7 @@ class Manager(Agent):
         self.domain_agent = DomainExpertAgent(llm_manager)
         self.feature_agent = FeatureEngineerAgent(llm_manager)
         self.modeling_agent = ModelingAgent(llm_manager)
+        self.paper_context_agent = PaperContextAgent(llm_manager)
         self.code_validation_agent = CodeValidationAgent(llm_manager)
         self.max_retry_attempts = 3
         self.improvement_history = []
@@ -42,6 +44,7 @@ class Manager(Agent):
         max_retry_attempts: int = 5,
         auto_fix: bool = True,
         hyperparameters: Optional[dict] = None,
+        use_hyperparameters: bool = True,
     ) -> dict:
         """
         Process with automatic code fixing and improvement.
@@ -57,6 +60,7 @@ class Manager(Agent):
             max_retry_attempts: Maximum retry attempts for code fixing
             auto_fix: Whether to automatically fix code errors
             hyperparameters: Model-name keyed hyperparameter configuration
+            use_hyperparameters: Whether to include configured hyperparameters in model generation
 
         Returns:
             Dictionary with pipeline results including fix attempts
@@ -80,9 +84,16 @@ class Manager(Agent):
             },
             "summary": {},
         }
-        if hyperparameters is None:
+        if use_hyperparameters and hyperparameters is None:
             hyperparameters = load_hyperparameters()
+        if not use_hyperparameters:
+            hyperparameters = {}
         result["hyperparameters"] = hyperparameters
+
+        paper_context = self.paper_context_agent.analyze(path, model=model)
+        result["paper_context"] = paper_context
+        if paper_context:
+            print(f"\n[Paper Context] Loaded evidence from {paper_context.get('paper', 'related paper')}")
 
         # --- Domain Analysis ---
         domain_analysis = {}
@@ -115,7 +126,13 @@ class Manager(Agent):
 
         # --- Feature Engineering ---
         print("\n[Feature Engineer] Designing features...")
-        feature_specs = self.feature_agent.analyze(path=path, target=target, user=user, model=model)
+        feature_specs = self.feature_agent.analyze(
+            path=path,
+            target=target,
+            user=user,
+            model=model,
+            paper_context=paper_context,
+        )
 
         result["pipeline"]["feature_specs"] = {
             "features": feature_specs.get("features", []),
@@ -167,6 +184,7 @@ class Manager(Agent):
                     user=user,
                     model=model,
                     hyperparameters=hyperparameters,
+                    paper_context=paper_context,
                 )
             else:
                 # Regenerate with error feedback
@@ -180,6 +198,7 @@ class Manager(Agent):
                     user=user,
                     model=model,
                     hyperparameters=hyperparameters,
+                    paper_context=paper_context,
                 )
 
             code_path = modeling_result.get("code_path")
