@@ -92,8 +92,12 @@ class Manager(Agent):
 
         paper_context = self.paper_context_agent.analyze(path, model=model)
         result["paper_context"] = paper_context
-        if paper_context:
+        if paper_context and paper_context.get("paper_context_available"):
             print(f"\n[Paper Context] Loaded evidence from {paper_context.get('paper', 'related paper')}")
+            print("  Evidence will be passed to feature engineering and modeling")
+        elif paper_context:
+            print(f"\n[Paper Context] Could not load evidence from {paper_context.get('paper', 'related paper')}")
+            print(f"  Status: {paper_context.get('status', 'summary unavailable')}")
 
         # --- Domain Analysis ---
         domain_analysis = {}

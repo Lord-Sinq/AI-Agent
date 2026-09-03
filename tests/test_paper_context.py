@@ -26,3 +26,9 @@ def test_paper_context_is_visible_as_reference_evidence():
     assert "PAPER EVIDENCE" in formatted
     assert "important_features" in formatted
     assert "dataset columns remain authoritative" in formatted
+
+
+def test_unavailable_paper_context_is_not_sent_to_agents():
+    formatted = format_paper_context({"paper": "study.pdf", "paper_context_available": False, "status": "OCR required"})
+
+    assert formatted == ""
